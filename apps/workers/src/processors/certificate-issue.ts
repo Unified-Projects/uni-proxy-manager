@@ -122,11 +122,26 @@ export async function processCertificateIssue(
         console.log(`[CertIssue] Using Pebble - skipping DNS operations (auto-validated)`);
       }
 
-      // Notify ACME server challenge is ready
-      await client.completeChallenge(challenge);
-
-      // Wait for challenge to be validated
-      await client.waitForValidStatus(challenge);
+      // Pebble can auto-validate quickly, especially with SAN orders.
+      // Skip completing already-valid challenges and tolerate valid-race errors.
+      const challengeStatus = challenge.status ?? "pending";
+      if (challengeStatus === "valid") {
+        console.log(`[CertIssue] Challenge already valid for ${authz.identifier.value}`);
+        await client.waitForValidStatus(challenge);
+      } else {
+        try {
+          // Notify ACME server challenge is ready
+          await client.completeChallenge(challenge);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.includes("status valid")) {
+            throw error;
+          }
+          console.log(`[CertIssue] Challenge became valid before completion for ${authz.identifier.value}`);
+        }
+        // Wait for challenge authorization state to settle before finalizing the order.
+        await client.waitForValidStatus(challenge);
+      }
 
       console.log(`[CertIssue] Challenge validated for ${authz.identifier.value}`);
 
@@ -136,9 +151,10 @@ export async function processCertificateIssue(
       }
     }
 
-    // Finalize order and get certificate
-    await client.finalizeOrder(order, certificateCsr);
-    const certificate = await client.getCertificate(order);
+    // Finalize order and wait for a valid, certificate-ready order resource.
+    let finalizedOrder = await client.finalizeOrder(order, certificateCsr);
+    finalizedOrder = await client.waitForValidStatus(finalizedOrder);
+    const certificate = await client.getCertificate(finalizedOrder);
 
     // Split certificate chain
     const certs = certificate.split(/(?=-----BEGIN CERTIFICATE-----)/);

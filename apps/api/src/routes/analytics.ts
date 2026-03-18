@@ -198,7 +198,7 @@ app.get("/:configId/live/ws-info", async (c) => {
   // Prefer proxy-forwarded headers over what Bun sees on the socket
   // (which is always HTTP when behind a TLS-terminating reverse proxy).
   const host = c.req.header("X-Forwarded-Host") ?? c.req.header("Host") ?? new URL(c.req.url).host;
-  const forwardedProto = c.req.header("X-Forwarded-Proto")?.split(",")[0].trim();
+  const forwardedProto = c.req.header("X-Forwarded-Proto")?.split(",")[0]?.trim();
   // Default to wss — only downgrade to ws if the proto is explicitly http.
   const wsProtocol = forwardedProto === "http" ? "ws" : "wss";
   const wsUrl = `${wsProtocol}://${host}/api/analytics/${configId}/live/ws`;

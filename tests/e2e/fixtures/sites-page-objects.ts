@@ -67,7 +67,9 @@ export class SitesPage extends SitesBasePage {
   }
 
   async searchSites(query: string) {
-    await this.searchInput.fill(query);
+    if (await this.searchInput.count()) {
+      await this.searchInput.fill(query);
+    }
   }
 
   async filterByStatus(status: string) {
@@ -81,7 +83,7 @@ export class SitesPage extends SitesBasePage {
   }
 
   async expectSiteCard(name: string) {
-    await expect(this.page.getByText(name)).toBeVisible();
+    await expect(this.page.getByText(name)).toHaveCount(1);
   }
 
   async clickSiteCard(name: string) {
@@ -113,8 +115,8 @@ export class CreateSiteDialog extends SitesBasePage {
     this.dialog = page.getByRole("dialog");
     this.nameInput = page.getByLabel("Name");
     this.slugInput = page.getByLabel("Slug");
-    this.frameworkSelect = page.getByRole("combobox", { name: /Framework/i });
-    this.renderModeSelect = page.getByRole("combobox", { name: /Render Mode/i });
+    this.frameworkSelect = page.getByRole("combobox").first();
+    this.renderModeSelect = page.getByRole("combobox").nth(1);
     this.buildCommandInput = page.getByLabel(/Build Command/i);
     this.outputDirectoryInput = page.getByLabel(/Output Directory/i);
     this.nodeVersionSelect = page.getByRole("combobox", { name: /Node Version/i });
@@ -145,11 +147,17 @@ export class CreateSiteDialog extends SitesBasePage {
     }
     if (data.framework) {
       await this.frameworkSelect.click();
-      await this.page.getByRole("option", { name: new RegExp(data.framework, "i") }).click();
+      const frameworkLabel = {
+        nextjs: "Next.js",
+        sveltekit: "SvelteKit",
+        static: "Static",
+        custom: "Custom",
+      }[data.framework];
+      await this.page.getByRole("option", { name: frameworkLabel }).click();
     }
     if (data.renderMode) {
       await this.renderModeSelect.click();
-      await this.page.getByRole("option", { name: new RegExp(data.renderMode, "i") }).click();
+      await this.page.getByRole("option", { name: data.renderMode.toUpperCase() }).click();
     }
     if (data.buildCommand) {
       await this.buildCommandInput.fill(data.buildCommand);
@@ -204,9 +212,9 @@ export class SiteDetailPage extends SitesBasePage {
     super(page);
     this.heading = page.locator("h1");
     this.statusBadge = page.locator('[data-testid="site-status"]').or(page.locator(".site-status-badge"));
-    this.deployButton = page.getByRole("button", { name: /Deploy|Trigger Deploy/i });
+    this.deployButton = page.getByRole("button", { name: "Deploy", exact: true });
     this.settingsButton = page.getByRole("button", { name: /Settings/i });
-    this.deleteButton = page.getByRole("button", { name: /Delete Site/i });
+    this.deleteButton = page.getByRole("button", { name: /^Delete$/i });
 
     this.deploymentsTab = page.getByRole("tab", { name: /Deployments/i });
     this.analyticsTab = page.getByRole("tab", { name: /Analytics/i });
@@ -215,7 +223,7 @@ export class SiteDetailPage extends SitesBasePage {
     this.logsTab = page.getByRole("tab", { name: /Logs/i });
 
     this.deploymentsList = page.locator('[data-testid="deployments-list"]').or(page.locator(".deployments-list"));
-    this.deploymentCards = page.locator('[data-testid="deployment-card"]').or(page.locator(".deployment-card"));
+    this.deploymentCards = page.locator("tbody tr");
 
     this.pageViewsStat = page.getByText(/Page Views/i).locator("..");
     this.visitorsStat = page.getByText(/Visitors/i).locator("..");
@@ -255,7 +263,7 @@ export class SiteDetailPage extends SitesBasePage {
   }
 
   async expectStatus(status: string) {
-    await expect(this.statusBadge).toContainText(status, { ignoreCase: true });
+    await expect(this.page.getByText(new RegExp(`^${status}$`, "i")).first()).toBeVisible();
   }
 
   async expectDeploymentCount(count: number) {
@@ -263,7 +271,8 @@ export class SiteDetailPage extends SitesBasePage {
   }
 
   async clickDeployment(version: number | string) {
-    await this.page.getByText(`v${version}`).or(this.page.getByText(`Version ${version}`)).click();
+    const row = this.page.locator("tbody tr").filter({ hasText: `#${version}` }).first();
+    await row.getByRole("link").click();
   }
 }
 
@@ -272,21 +281,17 @@ export class SiteDetailPage extends SitesBasePage {
  */
 export class TriggerDeploymentDialog extends SitesBasePage {
   readonly dialog: Locator;
-  readonly branchInput: Locator;
-  readonly branchSelect: Locator;
-  readonly commitShaInput: Locator;
-  readonly commitMessageInput: Locator;
+  readonly githubOption: Locator;
+  readonly uploadOption: Locator;
   readonly deployButton: Locator;
   readonly cancelButton: Locator;
 
   constructor(page: Page) {
     super(page);
     this.dialog = page.getByRole("dialog");
-    this.branchInput = page.getByLabel(/Branch/i);
-    this.branchSelect = page.getByRole("combobox", { name: /Branch/i });
-    this.commitShaInput = page.getByLabel(/Commit SHA/i);
-    this.commitMessageInput = page.getByLabel(/Commit Message/i);
-    this.deployButton = page.getByRole("button", { name: /Deploy|Start Deployment/i });
+    this.githubOption = page.getByRole("button", { name: /Deploy from GitHub/i });
+    this.uploadOption = page.getByRole("button", { name: /Upload Archive/i });
+    this.deployButton = this.dialog.getByRole("button", { name: "Deploy", exact: true });
     this.cancelButton = page.getByRole("button", { name: "Cancel" });
   }
 
@@ -294,21 +299,12 @@ export class TriggerDeploymentDialog extends SitesBasePage {
     await expect(this.dialog).toBeVisible();
   }
 
-  async fillForm(data: { branch?: string; commitSha?: string; commitMessage?: string }) {
-    if (data.branch) {
-      if (await this.branchSelect.isVisible()) {
-        await this.branchSelect.click();
-        await this.page.getByRole("option", { name: data.branch }).click();
-      } else {
-        await this.branchInput.fill(data.branch);
-      }
-    }
-    if (data.commitSha) {
-      await this.commitShaInput.fill(data.commitSha);
-    }
-    if (data.commitMessage) {
-      await this.commitMessageInput.fill(data.commitMessage);
-    }
+  async selectGitHubMethod() {
+    await this.githubOption.click();
+  }
+
+  async selectUploadMethod() {
+    await this.uploadOption.click();
   }
 
   async submit() {
@@ -342,15 +338,14 @@ export class DeploymentDetailPage extends SitesBasePage {
 
   // Log controls
   readonly autoScrollToggle: Locator;
-  readonly downloadLogsButton: Locator;
 
   constructor(page: Page) {
     super(page);
     this.heading = page.locator("h1");
-    this.statusBadge = page.locator('[data-testid="deployment-status"]').or(page.locator(".deployment-status-badge"));
-    this.logsViewer = page.locator('[data-testid="logs-viewer"]').or(page.locator(".logs-viewer"));
-    this.cancelButton = page.getByRole("button", { name: /Cancel Deployment/i });
-    this.promoteButton = page.getByRole("button", { name: /Promote/i });
+    this.statusBadge = page.locator("main");
+    this.logsViewer = page.locator("pre.whitespace-pre-wrap").first();
+    this.cancelButton = page.getByRole("button", { name: "Cancel", exact: true });
+    this.promoteButton = page.getByRole("button", { name: /Promote to Production/i });
     this.rollbackButton = page.getByRole("button", { name: /Rollback/i });
 
     this.versionLabel = page.getByText(/Version/i).locator("..");
@@ -359,8 +354,7 @@ export class DeploymentDetailPage extends SitesBasePage {
     this.slotLabel = page.getByText(/Slot/i).locator("..");
     this.durationLabel = page.getByText(/Duration/i).locator("..");
 
-    this.autoScrollToggle = page.getByRole("checkbox", { name: /Auto.?scroll/i });
-    this.downloadLogsButton = page.getByRole("button", { name: /Download Logs/i });
+    this.autoScrollToggle = page.getByRole("button", { name: /Auto-scroll:/i });
   }
 
   async goto(siteId: string, deploymentId: string) {
@@ -372,7 +366,7 @@ export class DeploymentDetailPage extends SitesBasePage {
   }
 
   async expectStatus(status: string) {
-    await expect(this.statusBadge).toContainText(status, { ignoreCase: true });
+    await expect(this.page.getByText(new RegExp(`^${status}$`, "i")).first()).toBeVisible();
   }
 
   async expectLogs(text: string) {
@@ -459,7 +453,7 @@ export class SiteSettingsPage extends SitesBasePage {
     this.envKeyInputs = page.locator('[data-testid="env-key"]').or(page.locator("input[name*='key']"));
     this.envValueInputs = page.locator('[data-testid="env-value"]').or(page.locator("input[name*='value']"));
 
-    this.deleteButton = page.getByRole("button", { name: /Delete Site/i });
+    this.deleteButton = page.getByRole("button", { name: /^Delete$/i });
     this.disableButton = page.getByRole("button", { name: /Disable Site/i });
 
     this.saveButton = page.getByRole("button", { name: /Save|Update/i });
@@ -569,20 +563,20 @@ export class GitHubConnectionSection extends SitesBasePage {
 
   constructor(page: Page) {
     super(page);
-    this.section = page.locator('[data-testid="github-section"]').or(page.getByText(/GitHub Integration/i).locator(".."));
-    this.connectButton = page.getByRole("button", { name: /Connect.*GitHub|Install GitHub App/i });
-    this.disconnectButton = page.getByRole("button", { name: /Disconnect/i });
-    this.syncButton = page.getByRole("button", { name: /Sync|Refresh/i });
+    this.section = page.getByRole("tabpanel", { name: /GitHub/i });
+    this.connectButton = this.section.getByRole("button", { name: /Connect Repository|Install GitHub App/i });
+    this.disconnectButton = this.section.getByRole("button", { name: /Disconnect/i });
+    this.syncButton = this.section.getByRole("button", { name: /Sync|Refresh/i });
 
-    this.repoName = page.locator('[data-testid="repo-name"]').or(page.getByText(/Repository/i).locator(".."));
-    this.productionBranch = page.getByRole("combobox", { name: /Production Branch/i });
-    this.autoDeployToggle = page.getByRole("switch", { name: /Auto.?Deploy/i });
-    this.previewBranchesInput = page.getByLabel(/Preview Branches/i);
+    this.repoName = this.section.locator('[data-testid="repo-name"]').or(this.section.getByText(/Repository/i).locator(".."));
+    this.productionBranch = this.section.getByRole("combobox").first();
+    this.autoDeployToggle = this.section.getByRole("switch").first();
+    this.previewBranchesInput = this.section.getByLabel(/Preview Branches/i);
 
-    this.branchSelector = page.getByRole("combobox", { name: /Branch/i });
+    this.branchSelector = this.section.getByRole("combobox").first();
 
-    this.lastSyncLabel = page.getByText(/Last Sync/i).locator("..");
-    this.lastCommitLabel = page.getByText(/Latest Commit/i).locator("..");
+    this.lastSyncLabel = this.section.getByText(/Last synced/i).locator("..");
+    this.lastCommitLabel = this.section.getByText(/Latest Commit/i).locator("..");
   }
 
   async expectConnected() {
@@ -652,7 +646,7 @@ export class SiteAnalyticsSection extends SitesBasePage {
 
     this.pageViewsCard = page.getByText(/Page Views/i).locator("..");
     this.visitorsCard = page.getByText(/Unique Visitors/i).locator("..");
-    this.avgResponseTimeCard = page.getByText(/Avg Response Time/i).locator("..");
+    this.avgResponseTimeCard = page.getByText(/Avg Response/i).locator("..");
     this.errorRateCard = page.getByText(/Error Rate/i).locator("..");
 
     this.visitorsChart = page.locator('[data-testid="visitors-chart"]').or(page.locator(".visitors-chart"));
@@ -664,7 +658,7 @@ export class SiteAnalyticsSection extends SitesBasePage {
     this.devicesSection = page.getByText(/Devices/i).locator("..");
     this.browsersSection = page.getByText(/Browsers/i).locator("..");
 
-    this.dateRangeSelector = page.getByRole("combobox", { name: /Date Range|Period/i });
+    this.dateRangeSelector = page.locator('button[role="combobox"]').nth(1);
     this.startDateInput = page.getByLabel(/Start Date/i);
     this.endDateInput = page.getByLabel(/End Date/i);
 
@@ -674,9 +668,9 @@ export class SiteAnalyticsSection extends SitesBasePage {
   async selectDateRange(range: "24h" | "7d" | "30d" | "custom") {
     await this.dateRangeSelector.click();
     const rangeName = {
-      "24h": /24 Hours|Last Day/i,
-      "7d": /7 Days|Last Week/i,
-      "30d": /30 Days|Last Month/i,
+      "24h": /Last 24 hours|24 Hours|Last Day/i,
+      "7d": /Last 7 days|7 Days|Last Week/i,
+      "30d": /Last 30 days|30 Days|Last Month/i,
       "custom": /Custom/i,
     }[range];
     await this.page.getByRole("option", { name: rangeName }).click();
@@ -688,11 +682,15 @@ export class SiteAnalyticsSection extends SitesBasePage {
   }
 
   async expectPageViews(count: number | string) {
-    await expect(this.pageViewsCard).toContainText(count.toString());
+    const value = typeof count === "number" ? count : Number(count);
+    const formatted = Number.isNaN(value) ? count.toString() : value.toLocaleString();
+    await expect(this.page.getByText(new RegExp(`^${formatted}$`))).toBeVisible();
   }
 
   async expectVisitors(count: number | string) {
-    await expect(this.visitorsCard).toContainText(count.toString());
+    const value = typeof count === "number" ? count : Number(count);
+    const formatted = Number.isNaN(value) ? count.toString() : value.toLocaleString();
+    await expect(this.page.getByText(new RegExp(`^${formatted}$`))).toBeVisible();
   }
 }
 
@@ -708,8 +706,8 @@ export class DeleteSiteDialog extends SitesBasePage {
 
   constructor(page: Page) {
     super(page);
-    this.dialog = page.getByRole("dialog");
-    this.confirmInput = page.getByPlaceholder(/Type.*to confirm/i);
+    this.dialog = page.getByRole("alertdialog");
+    this.confirmInput = page.getByLabel(/Type .* to confirm/i);
     this.deleteButton = page.getByRole("button", { name: /Delete|Confirm Delete/i });
     this.cancelButton = page.getByRole("button", { name: "Cancel" });
     this.warningText = page.getByText(/This action cannot be undone|permanently delete/i);

@@ -5,7 +5,7 @@ type MockHandler = (url: URL, method: string, bodyText: string | null) => Promis
 interface MockResponse {
   status?: number;
   contentType?: string;
-  body?: string;
+  body?: string | Buffer;
 }
 
 const now = new Date();
@@ -375,6 +375,19 @@ const textResponse = (text: string, status = 200): MockResponse => ({
   body: text,
 });
 
+const ONE_BY_ONE_TRANSPARENT_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+const pngResponse = (): MockResponse => ({
+  status: 200,
+  contentType: "image/png",
+  body: Buffer.from(ONE_BY_ONE_TRANSPARENT_PNG_BASE64, "base64"),
+});
+
+const allErrorLikePages = () => [...mockState.errorPages, ...mockState.maintenancePages];
+
+const findErrorLikePage = (id: string) => allErrorLikePages().find((p) => p.id === id);
+
 const handlers: MockHandler[] = [
   async (url, method, bodyText) => {
     if (url.pathname === "/api/stats/dashboard" && method === "GET") {
@@ -485,24 +498,26 @@ const handlers: MockHandler[] = [
     }
     return null;
   },
-  // Error pages handlers
+  // Error pages handlers (including maintenance pages in unified API)
   async (url, method, bodyText) => {
-    // GET /api/error-pages - List error pages (excluding maintenance type)
+    // GET /api/error-pages - List all pages (error + maintenance)
     if (url.pathname === "/api/error-pages" && method === "GET") {
-      const errorPages = mockState.errorPages.filter((p) => p.type !== "maintenance");
-      return jsonResponse({ errorPages });
+      return jsonResponse({ errorPages: allErrorLikePages() });
     }
 
     // POST /api/error-pages - Create error page
     if (url.pathname === "/api/error-pages" && method === "POST" && bodyText) {
       const body = JSON.parse(bodyText) as { name: string; type: string; httpStatusCode?: number; description?: string };
-      const errorPage = {
-        id: `err-${mockState.errorPages.length + 1}`,
+      const isMaintenance = body.type === "maintenance";
+      const nextIndex = isMaintenance ? mockState.maintenancePages.length + 1 : mockState.errorPages.length + 1;
+      const createdPage = {
+        id: isMaintenance ? `maint-${nextIndex}` : `err-${nextIndex}`,
         name: body.name,
         type: body.type,
-        httpStatusCode: body.httpStatusCode || (body.type === "custom" ? 500 : parseInt(body.type)),
+        httpStatusCode:
+          body.httpStatusCode || (body.type === "maintenance" ? 503 : body.type === "custom" ? 500 : parseInt(body.type)),
         description: body.description || null,
-        directoryPath: `/data/error-pages/err-${mockState.errorPages.length + 1}`,
+        directoryPath: `/data/error-pages/${isMaintenance ? `maint-${nextIndex}` : `err-${nextIndex}`}`,
         entryFile: "index.html",
         originalZipName: null,
         uploadedAt: null,
@@ -512,14 +527,18 @@ const handlers: MockHandler[] = [
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       };
-      mockState.errorPages.push(errorPage);
-      return jsonResponse({ errorPage }, 201);
+      if (isMaintenance) {
+        mockState.maintenancePages.push(createdPage);
+      } else {
+        mockState.errorPages.push(createdPage);
+      }
+      return jsonResponse({ errorPage: createdPage }, 201);
     }
 
     // GET /api/error-pages/:id - Get single error page
     const errorPageDetail = url.pathname.match(/^\/api\/error-pages\/(?<id>[^/]+)$/);
     if (errorPageDetail && method === "GET") {
-      const errorPage = mockState.errorPages.find((p) => p.id === errorPageDetail.groups!.id);
+      const errorPage = findErrorLikePage(errorPageDetail.groups!.id);
       if (!errorPage) {
         return jsonResponse({ error: "Error page not found" }, 404);
       }
@@ -528,18 +547,23 @@ const handlers: MockHandler[] = [
 
     // DELETE /api/error-pages/:id
     if (errorPageDetail && method === "DELETE") {
-      const index = mockState.errorPages.findIndex((p) => p.id === errorPageDetail.groups!.id);
-      if (index === -1) {
+      const pageId = errorPageDetail.groups!.id;
+      const errorIndex = mockState.errorPages.findIndex((p) => p.id === pageId);
+      const maintenanceIndex = mockState.maintenancePages.findIndex((p) => p.id === pageId);
+      if (errorIndex !== -1) {
+        mockState.errorPages.splice(errorIndex, 1);
+      } else if (maintenanceIndex !== -1) {
+        mockState.maintenancePages.splice(maintenanceIndex, 1);
+      } else {
         return jsonResponse({ error: "Error page not found" }, 404);
       }
-      mockState.errorPages.splice(index, 1);
       return jsonResponse({ success: true });
     }
 
     // POST /api/error-pages/:id/upload - Upload files
     const uploadMatch = url.pathname.match(/^\/api\/error-pages\/(?<id>[^/]+)\/upload$/);
     if (uploadMatch && method === "POST") {
-      const errorPage = mockState.errorPages.find((p) => p.id === uploadMatch.groups!.id);
+      const errorPage = findErrorLikePage(uploadMatch.groups!.id);
       if (!errorPage) {
         return jsonResponse({ error: "Error page not found" }, 404);
       }
@@ -556,18 +580,17 @@ const handlers: MockHandler[] = [
     // GET /api/error-pages/:id/preview.png - Serve preview
     const previewMatch = url.pathname.match(/^\/api\/error-pages\/(?<id>[^/]+)\/preview\.png$/);
     if (previewMatch && method === "GET") {
-      const errorPage = mockState.errorPages.find((p) => p.id === previewMatch.groups!.id);
+      const errorPage = findErrorLikePage(previewMatch.groups!.id);
       if (!errorPage || !errorPage.previewImagePath) {
         return jsonResponse({ error: "Preview not found" }, 404);
       }
-      // Return a small fake PNG
-      return { status: 200, contentType: "image/png", body: "" };
+      return pngResponse();
     }
 
     // POST /api/error-pages/:id/regenerate-preview
     const regenerateMatch = url.pathname.match(/^\/api\/error-pages\/(?<id>[^/]+)\/regenerate-preview$/);
     if (regenerateMatch && method === "POST") {
-      const errorPage = mockState.errorPages.find((p) => p.id === regenerateMatch.groups!.id);
+      const errorPage = findErrorLikePage(regenerateMatch.groups!.id);
       if (!errorPage) {
         return jsonResponse({ error: "Error page not found" }, 404);
       }
@@ -654,7 +677,7 @@ const handlers: MockHandler[] = [
       if (!maintenancePage || !maintenancePage.previewImagePath) {
         return jsonResponse({ error: "Preview not found" }, 404);
       }
-      return { status: 200, contentType: "image/png", body: "" };
+      return pngResponse();
     }
 
     // POST /api/maintenance-pages/:id/regenerate-preview
@@ -773,6 +796,28 @@ const handlers: MockHandler[] = [
   },
   // Sites extension handlers
   async (url, method, bodyText) => {
+    const withSiteComputedFields = (site: (typeof mockState.sites)[number]) => {
+      const deployments = mockState.deployments
+        .filter((d) => d.siteId === site.id)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const activeDeployment = deployments.find((d) => d.isActive);
+      const latestDeployment = deployments[0];
+
+      return {
+        ...site,
+        deployments,
+        activeSlot: activeDeployment?.slot ?? null,
+        activeVersion: activeDeployment?.version ?? null,
+        latestDeployment: latestDeployment
+          ? {
+              ...latestDeployment,
+              buildDurationMs: latestDeployment.buildDurationMs ?? null,
+              deployedAt: latestDeployment.completedAt ?? null,
+            }
+          : null,
+      };
+    };
+
     // GET /api/sites - List all sites
     if (url.pathname === "/api/sites" && method === "GET") {
       const status = url.searchParams.get("status");
@@ -784,7 +829,7 @@ const handlers: MockHandler[] = [
       if (framework) {
         sites = sites.filter((s) => s.framework === framework);
       }
-      return jsonResponse({ sites });
+      return jsonResponse({ sites: sites.map(withSiteComputedFields) });
     }
 
     // POST /api/sites - Create new site
@@ -825,8 +870,7 @@ const handlers: MockHandler[] = [
       if (!site) {
         return jsonResponse({ error: "Site not found" }, 404);
       }
-      const deployments = mockState.deployments.filter((d) => d.siteId === site.id);
-      return jsonResponse({ site: { ...site, deployments } });
+      return jsonResponse({ site: withSiteComputedFields(site) });
     }
 
     // PUT /api/sites/:id - Update site
@@ -854,6 +898,193 @@ const handlers: MockHandler[] = [
   },
   // Deployments handlers
   async (url, method, bodyText) => {
+    const createDeployment = (siteId: string, overrides: Partial<typeof mockState.deployments[number]> = {}) => {
+      const siteDeployments = mockState.deployments.filter((d) => d.siteId === siteId);
+      const lastDeployment = siteDeployments.sort((a, b) => b.version - a.version)[0];
+      const deployment = {
+        id: `deploy-${mockState.deployments.length + 1}`,
+        siteId,
+        version: (lastDeployment?.version || 0) + 1,
+        slot: lastDeployment?.slot === "blue" ? "green" : "blue",
+        branch: "main",
+        commitSha: `sha-${Date.now()}`,
+        commitMessage: "Manual deployment",
+        status: "live",
+        isActive: true,
+        triggeredBy: "manual",
+        buildLogs: "[12:00:00] Starting build...\n[12:01:00] Build complete",
+        startedAt: now.toISOString(),
+        completedAt: now.toISOString(),
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        ...overrides,
+      };
+
+      mockState.deployments
+        .filter((d) => d.siteId === siteId)
+        .forEach((d) => {
+          d.isActive = false;
+        });
+      mockState.deployments.push(deployment);
+
+      const site = mockState.sites.find((s) => s.id === siteId);
+      if (site) {
+        site.activeDeploymentId = deployment.id;
+        site.status = deployment.status === "failed" ? "error" : "active";
+        site.updatedAt = now.toISOString();
+      }
+
+      return deployment;
+    };
+
+    // Modern deployment endpoints used by current web app
+    const modernDeployMatch = url.pathname.match(/^\/api\/sites\/(?<siteId>[^/]+)\/deploy$/);
+    if (modernDeployMatch && method === "POST") {
+      const siteId = modernDeployMatch.groups!.siteId;
+      const site = mockState.sites.find((s) => s.id === siteId);
+      if (!site) {
+        return jsonResponse({ error: "Site not found" }, 404);
+      }
+
+      const deployment = createDeployment(siteId, { triggeredBy: "manual", commitMessage: "Manual deployment" });
+      return jsonResponse({ deployment, message: "Deployment started" }, 201);
+    }
+
+    const modernUploadMatch = url.pathname.match(/^\/api\/sites\/(?<siteId>[^/]+)\/upload$/);
+    if (modernUploadMatch && method === "POST") {
+      const siteId = modernUploadMatch.groups!.siteId;
+      const site = mockState.sites.find((s) => s.id === siteId);
+      if (!site) {
+        return jsonResponse({ error: "Site not found" }, 404);
+      }
+
+      const deployment = createDeployment(siteId, {
+        triggeredBy: "manual",
+        commitMessage: "Uploaded deployment archive",
+      });
+      return jsonResponse({ deployment, message: "Upload deployment started" }, 201);
+    }
+
+    if (url.pathname === "/api/deployments" && method === "GET") {
+      const siteId = url.searchParams.get("siteId");
+      const deployments = siteId
+        ? mockState.deployments.filter((d) => d.siteId === siteId)
+        : mockState.deployments;
+      return jsonResponse({ deployments });
+    }
+
+    const deploymentByIdMatch = url.pathname.match(/^\/api\/deployments\/(?<deploymentId>[^/]+)$/);
+    if (deploymentByIdMatch && method === "GET") {
+      const deployment = mockState.deployments.find((d) => d.id === deploymentByIdMatch.groups!.deploymentId);
+      if (!deployment) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      return jsonResponse({ deployment });
+    }
+
+    if (deploymentByIdMatch && method === "DELETE") {
+      const deploymentId = deploymentByIdMatch.groups!.deploymentId;
+      const index = mockState.deployments.findIndex((d) => d.id === deploymentId);
+      if (index === -1) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      mockState.deployments.splice(index, 1);
+      return jsonResponse({ message: "Deployment deleted", deploymentId });
+    }
+
+    const deploymentLogsMatch = url.pathname.match(/^\/api\/deployments\/(?<deploymentId>[^/]+)\/logs$/);
+    if (deploymentLogsMatch && method === "GET") {
+      const deployment = mockState.deployments.find((d) => d.id === deploymentLogsMatch.groups!.deploymentId);
+      if (!deployment) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      return jsonResponse({
+        logs: deployment.buildLogs || "",
+        status: deployment.status,
+        complete: deployment.status !== "pending" && deployment.status !== "building" && deployment.status !== "deploying",
+      });
+    }
+
+    const modernCancelMatch = url.pathname.match(/^\/api\/deployments\/(?<deploymentId>[^/]+)\/cancel$/);
+    if (modernCancelMatch && method === "POST") {
+      const deployment = mockState.deployments.find((d) => d.id === modernCancelMatch.groups!.deploymentId);
+      if (!deployment) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      deployment.status = "cancelled";
+      deployment.updatedAt = now.toISOString();
+      return jsonResponse({ deployment, message: "Deployment cancelled" });
+    }
+
+    const modernPromoteMatch = url.pathname.match(/^\/api\/deployments\/(?<deploymentId>[^/]+)\/promote$/);
+    if (modernPromoteMatch && method === "POST") {
+      const deployment = mockState.deployments.find((d) => d.id === modernPromoteMatch.groups!.deploymentId);
+      if (!deployment) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      mockState.deployments
+        .filter((d) => d.siteId === deployment.siteId)
+        .forEach((d) => {
+          d.isActive = d.id === deployment.id;
+        });
+      const site = mockState.sites.find((s) => s.id === deployment.siteId);
+      if (site) {
+        site.activeDeploymentId = deployment.id;
+      }
+      return jsonResponse({ deployment, message: "Deployment promoted" });
+    }
+
+    const modernRetryMatch = url.pathname.match(/^\/api\/deployments\/(?<deploymentId>[^/]+)\/retry$/);
+    if (modernRetryMatch && method === "POST") {
+      const source = mockState.deployments.find((d) => d.id === modernRetryMatch.groups!.deploymentId);
+      if (!source) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      const deployment = createDeployment(source.siteId, {
+        branch: source.branch,
+        commitSha: source.commitSha,
+        commitMessage: `Retry: ${source.commitMessage}`,
+        triggeredBy: "manual",
+      });
+      return jsonResponse({ message: "Retry started", deploymentId: deployment.id });
+    }
+
+    const modernRedeployMatch = url.pathname.match(/^\/api\/deployments\/(?<deploymentId>[^/]+)\/redeploy$/);
+    if (modernRedeployMatch && method === "POST") {
+      const source = mockState.deployments.find((d) => d.id === modernRedeployMatch.groups!.deploymentId);
+      if (!source) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+      const deployment = createDeployment(source.siteId, {
+        branch: source.branch,
+        commitSha: source.commitSha,
+        commitMessage: `Redeploy: ${source.commitMessage}`,
+        triggeredBy: "manual",
+      });
+      return jsonResponse({ message: "Redeploy started", deploymentId: deployment.id });
+    }
+
+    const modernRollbackMatch = url.pathname.match(/^\/api\/sites\/(?<siteId>[^/]+)\/rollback\/(?<deploymentId>[^/]+)$/);
+    if (modernRollbackMatch && method === "POST") {
+      const siteId = modernRollbackMatch.groups!.siteId;
+      const deploymentId = modernRollbackMatch.groups!.deploymentId;
+      const deployment = mockState.deployments.find((d) => d.id === deploymentId && d.siteId === siteId);
+      if (!deployment) {
+        return jsonResponse({ error: "Deployment not found" }, 404);
+      }
+
+      mockState.deployments
+        .filter((d) => d.siteId === siteId)
+        .forEach((d) => {
+          d.isActive = d.id === deployment.id;
+        });
+      const site = mockState.sites.find((s) => s.id === siteId);
+      if (site) {
+        site.activeDeploymentId = deployment.id;
+      }
+      return jsonResponse({ deployment, message: "Site rolled back successfully" });
+    }
+
     // GET /api/sites/:siteId/deployments - List deployments
     const deploymentsMatch = url.pathname.match(/^\/api\/sites\/(?<siteId>[^/]+)\/deployments$/);
     if (deploymentsMatch && method === "GET") {
@@ -983,6 +1214,38 @@ const handlers: MockHandler[] = [
       return jsonResponse({ configured: true, appSlug: "uni-proxy-manager" });
     }
 
+    // GET /api/github/install
+    if (url.pathname === "/api/github/install" && method === "GET") {
+      return jsonResponse({
+        installUrl: "https://github.com/apps/uni-proxy-manager/installations/new",
+      });
+    }
+
+    // GET /api/github/installations/:installationId/repositories
+    const installationReposMatch = url.pathname.match(/^\/api\/github\/installations\/(?<installationId>[^/]+)\/repositories$/);
+    if (installationReposMatch && method === "GET") {
+      return jsonResponse({
+        repositories: [
+          {
+            id: 87654321,
+            name: "my-nextjs-app",
+            fullName: "my-org/my-nextjs-app",
+            defaultBranch: "main",
+            private: false,
+            url: "https://github.com/my-org/my-nextjs-app",
+          },
+          {
+            id: 87654322,
+            name: "my-other-app",
+            fullName: "my-org/my-other-app",
+            defaultBranch: "production",
+            private: true,
+            url: "https://github.com/my-org/my-other-app",
+          },
+        ],
+      });
+    }
+
     // GET /api/github/sites/:siteId
     const githubSiteMatch = url.pathname.match(/^\/api\/github\/sites\/(?<siteId>[^/]+)$/);
     if (githubSiteMatch && method === "GET") {
@@ -1042,6 +1305,38 @@ const handlers: MockHandler[] = [
       const updates = JSON.parse(bodyText);
       Object.assign(connection, updates, { updatedAt: now.toISOString() });
       return jsonResponse({ connection });
+    }
+
+    // GET /api/github/sites/:siteId/branches
+    const branchesMatch = url.pathname.match(/^\/api\/github\/sites\/(?<siteId>[^/]+)\/branches$/);
+    if (branchesMatch && method === "GET") {
+      const connection = mockState.githubConnections.find((c) => c.siteId === branchesMatch.groups!.siteId);
+      if (!connection) {
+        return jsonResponse({ error: "No GitHub connection found" }, 404);
+      }
+      return jsonResponse({
+        branches: [
+          { name: "main", protected: true },
+          { name: "production", protected: true },
+          { name: "develop", protected: false },
+        ],
+      });
+    }
+
+    // POST /api/github/sites/:siteId/sync
+    const syncMatch = url.pathname.match(/^\/api\/github\/sites\/(?<siteId>[^/]+)\/sync$/);
+    if (syncMatch && method === "POST") {
+      const connection = mockState.githubConnections.find((c) => c.siteId === syncMatch.groups!.siteId);
+      if (!connection) {
+        return jsonResponse({ error: "No GitHub connection found" }, 404);
+      }
+      connection.lastSyncAt = now.toISOString();
+      connection.lastCommitSha = "abc123def456";
+      connection.updatedAt = now.toISOString();
+      return jsonResponse({
+        synced: true,
+        latestCommit: { sha: connection.lastCommitSha, message: "feat: sync" },
+      });
     }
 
     // DELETE /api/github/sites/:siteId - Disconnect

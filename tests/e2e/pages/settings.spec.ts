@@ -15,9 +15,8 @@ test.describe("Settings Page", () => {
     await settingsPage.goto();
 
     await expect(page.getByRole("tab", { name: "HAProxy" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Configuration" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "ACME / SSL" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "General" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "System" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Export / Import" })).toBeVisible();
   });
 
   test("should show haproxy tab content by default", async ({ page }) => {
@@ -28,34 +27,26 @@ test.describe("Settings Page", () => {
     await expect(page.getByRole("main").getByText("HAProxy Status")).toBeVisible();
   });
 
-  test("should switch to configuration tab", async ({ page }) => {
+  test("should switch to system tab", async ({ page }) => {
     const settingsPage = new SettingsPage(page);
     await settingsPage.goto();
 
-    await settingsPage.switchToTab("config");
+    await settingsPage.switchToTab("system");
 
-    // Configuration content should be visible
-    await expect(page.getByRole("main").getByRole("heading", { name: "HAProxy Configuration" })).toBeVisible();
+    // System tab should be selected
+    await expect(page.getByRole("tab", { name: "System" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "HAProxy" })).toHaveAttribute("aria-selected", "false");
   });
 
-  test("should switch to acme tab", async ({ page }) => {
+  test("should switch to export/import tab", async ({ page }) => {
     const settingsPage = new SettingsPage(page);
     await settingsPage.goto();
 
-    await settingsPage.switchToTab("acme");
+    await settingsPage.switchToTab("export-import");
 
-    // ACME content should be visible
-    await expect(page.getByRole("main").getByText("ACME / Let's Encrypt Settings")).toBeVisible();
-  });
-
-  test("should switch to general tab", async ({ page }) => {
-    const settingsPage = new SettingsPage(page);
-    await settingsPage.goto();
-
-    await settingsPage.switchToTab("general");
-
-    // General content should be visible
-    await expect(page.getByRole("main").getByRole("heading", { name: "System Information" })).toBeVisible();
+    // Export / import tab should be selected
+    await expect(page.getByRole("tab", { name: "Export / Import" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "HAProxy" })).toHaveAttribute("aria-selected", "false");
   });
 
   test("should display haproxy reload button", async ({ page }) => {

@@ -18,7 +18,7 @@ export interface DomainForStatus {
   }>;
   certificate?: {
     status: "pending" | "issuing" | "active" | "expired" | "failed" | "revoked";
-    altNames?: string[];
+    altNames?: string[] | null;
   } | null;
   hasRedirectRoutes?: boolean;
   hasPomeriumRoutes?: boolean;
@@ -26,7 +26,7 @@ export interface DomainForStatus {
 
 export interface CertificateForWildcardCheck {
   status: "pending" | "issuing" | "active" | "expired" | "failed" | "revoked";
-  altNames?: string[];
+  altNames?: string[] | null;
 }
 
 /**

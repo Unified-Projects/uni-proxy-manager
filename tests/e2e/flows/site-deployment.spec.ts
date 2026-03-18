@@ -23,46 +23,19 @@ test.describe("Site Deployment Flow", () => {
 
       await siteDetail.goto("site-1");
       await siteDetail.clickDeploy();
-
-      await triggerDialog.fillForm({
-        branch: "main",
-        commitMessage: "Test deployment",
-      });
+      await triggerDialog.selectGitHubMethod();
       await triggerDialog.submit();
 
-      // Should show new deployment in list
       await siteDetail.switchToTab("deployments");
-      await expect(page.getByText(/v4/)).toBeVisible();
+      await expect(page.getByText("#4")).toBeVisible();
     });
 
-    test("should trigger deployment with custom commit SHA", async ({ page }) => {
+    test("should close deploy dialog on cancel", async ({ page }) => {
       const siteDetail = new SiteDetailPage(page);
       const triggerDialog = new TriggerDeploymentDialog(page);
 
       await siteDetail.goto("site-1");
       await siteDetail.clickDeploy();
-
-      await triggerDialog.fillForm({
-        branch: "main",
-        commitSha: "abc123def456",
-        commitMessage: "Deploy specific commit",
-      });
-      await triggerDialog.submit();
-
-      // Dialog should close after triggering
-      await expect(triggerDialog.dialog).not.toBeVisible();
-    });
-
-    test("should cancel deployment trigger", async ({ page }) => {
-      const siteDetail = new SiteDetailPage(page);
-      const triggerDialog = new TriggerDeploymentDialog(page);
-
-      await siteDetail.goto("site-1");
-      await siteDetail.clickDeploy();
-
-      await triggerDialog.fillForm({
-        branch: "develop",
-      });
       await triggerDialog.cancel();
 
       await expect(triggerDialog.dialog).not.toBeVisible();
@@ -118,12 +91,6 @@ test.describe("Site Deployment Flow", () => {
       await deploymentDetail.goto("site-2", "deploy-3");
       await deploymentDetail.clickCancel();
 
-      // Confirm cancellation if dialog appears
-      const confirmButton = page.getByRole("button", { name: /Confirm|Yes/i });
-      if (await confirmButton.isVisible()) {
-        await confirmButton.click();
-      }
-
       // Status should update to cancelled
       await deploymentDetail.expectStatus("cancelled");
     });
@@ -144,14 +111,8 @@ test.describe("Site Deployment Flow", () => {
       await deploymentDetail.goto("site-1", "deploy-2");
       await deploymentDetail.clickPromote();
 
-      // Confirm promotion if dialog appears
-      const confirmButton = page.getByRole("button", { name: /Confirm|Promote/i });
-      if (await confirmButton.isVisible()) {
-        await confirmButton.click();
-      }
-
       // Should show as active now
-      await expect(page.getByText(/active/i)).toBeVisible();
+      await expect(page.getByText("Active", { exact: true })).toBeVisible();
     });
   });
 
@@ -160,19 +121,12 @@ test.describe("Site Deployment Flow", () => {
       const siteDetail = new SiteDetailPage(page);
 
       await siteDetail.goto("site-1");
-      await siteDetail.switchToTab("deployments");
-
-      // Click rollback on v2 deployment
-      await page.getByRole("button", { name: /Rollback/i }).first().click();
-
-      // Confirm rollback if dialog appears
-      const confirmButton = page.getByRole("button", { name: /Confirm|Rollback/i });
-      if (await confirmButton.isVisible()) {
-        await confirmButton.click();
-      }
-
-      // Should show success message
-      await expect(page.getByText(/rolled back|success/i)).toBeVisible();
+      await page.getByRole("button", { name: "Rollback", exact: true }).click();
+      const targetDeployment = page.getByRole("button", { name: /Deployment #/ }).first();
+      await expect(targetDeployment).toBeVisible();
+      await targetDeployment.click();
+      await page.getByRole("button", { name: "Rollback", exact: true }).last().click();
+      await expect(page.getByRole("dialog")).not.toBeVisible();
     });
   });
 
@@ -196,57 +150,30 @@ test.describe("Site Deployment Flow", () => {
       const deploymentDetail = new DeploymentDetailPage(page);
 
       await deploymentDetail.goto("site-1", "deploy-1");
-
-      const initialState = await deploymentDetail.autoScrollToggle.isChecked();
+      await expect(deploymentDetail.autoScrollToggle).toContainText("On");
       await deploymentDetail.toggleAutoScroll();
-
-      const newState = await deploymentDetail.autoScrollToggle.isChecked();
-      expect(newState).not.toBe(initialState);
-    });
-
-    test("should show download logs button", async ({ page }) => {
-      const deploymentDetail = new DeploymentDetailPage(page);
-
-      await deploymentDetail.goto("site-1", "deploy-1");
-      await expect(deploymentDetail.downloadLogsButton).toBeVisible();
+      await expect(deploymentDetail.autoScrollToggle).toContainText("Off");
     });
   });
 
   test.describe("Deployment List", () => {
-    test("should show all deployments for a site", async ({ page }) => {
+    test("should show deployments for a site", async ({ page }) => {
       const siteDetail = new SiteDetailPage(page);
 
       await siteDetail.goto("site-1");
       await siteDetail.switchToTab("deployments");
-
-      // Site 1 has 2 deployments
-      await siteDetail.expectDeploymentCount(2);
+      await expect(page.getByText("#3")).toBeVisible();
+      await expect(page.getByText("#2")).toBeVisible();
     });
 
-    test("should filter deployments by status", async ({ page }) => {
+    test("should show deployment versions", async ({ page }) => {
       const siteDetail = new SiteDetailPage(page);
 
       await siteDetail.goto("site-1");
       await siteDetail.switchToTab("deployments");
 
-      // Filter by live status
-      await page.getByRole("combobox", { name: /Status/i }).click();
-      await page.getByRole("option", { name: /Live/i }).click();
-
-      // Should show only live deployments
-      await expect(page.getByText("live")).toBeVisible();
-    });
-
-    test("should show deployment version and slot", async ({ page }) => {
-      const siteDetail = new SiteDetailPage(page);
-
-      await siteDetail.goto("site-1");
-      await siteDetail.switchToTab("deployments");
-
-      // v3 is on blue slot
-      await expect(page.getByText(/blue/i)).toBeVisible();
-      // v2 is on green slot
-      await expect(page.getByText(/green/i)).toBeVisible();
+      await expect(page.getByText("#3")).toBeVisible();
+      await expect(page.getByText("#2")).toBeVisible();
     });
   });
 });

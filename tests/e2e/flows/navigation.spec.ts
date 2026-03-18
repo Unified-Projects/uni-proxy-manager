@@ -32,7 +32,9 @@ test.describe("Navigation Flow", () => {
     // Navigate to Maintenance Pages
     await sidebar.navigateToMaintenancePages();
     await expect(page).toHaveURL("/maintenance-pages");
-    await expect(page.getByRole("heading", { name: /Maintenance Pages/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Maintenance Pages", level: 1 })
+    ).toBeVisible();
 
     // Navigate to Maintenance Mode
     await sidebar.navigateToMaintenanceMode();

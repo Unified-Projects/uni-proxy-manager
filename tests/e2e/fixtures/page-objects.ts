@@ -304,17 +304,15 @@ export class MaintenancePage extends BasePage {
 export class SettingsPage extends BasePage {
   readonly heading: Locator;
   readonly haproxyTab: Locator;
-  readonly configTab: Locator;
-  readonly acmeTab: Locator;
-  readonly generalTab: Locator;
+  readonly systemTab: Locator;
+  readonly exportImportTab: Locator;
 
   constructor(page: Page) {
     super(page);
     this.heading = page.getByRole("heading", { name: "Settings" });
     this.haproxyTab = page.getByRole("tab", { name: "HAProxy" });
-    this.configTab = page.getByRole("tab", { name: "Configuration" });
-    this.acmeTab = page.getByRole("tab", { name: "ACME / SSL" });
-    this.generalTab = page.getByRole("tab", { name: "General" });
+    this.systemTab = page.getByRole("tab", { name: "System" });
+    this.exportImportTab = page.getByRole("tab", { name: "Export / Import" });
   }
 
   async goto() {
@@ -325,19 +323,16 @@ export class SettingsPage extends BasePage {
     await expect(this.heading).toBeVisible();
   }
 
-  async switchToTab(tab: "haproxy" | "config" | "acme" | "general") {
+  async switchToTab(tab: "haproxy" | "system" | "export-import") {
     switch (tab) {
       case "haproxy":
         await this.haproxyTab.click();
         break;
-      case "config":
-        await this.configTab.click();
+      case "system":
+        await this.systemTab.click();
         break;
-      case "acme":
-        await this.acmeTab.click();
-        break;
-      case "general":
-        await this.generalTab.click();
+      case "export-import":
+        await this.exportImportTab.click();
         break;
     }
   }
@@ -365,7 +360,7 @@ export class Sidebar extends BasePage {
     this.errorPagesLink = page.getByRole("link", { name: "Error Pages" });
     this.maintenancePagesLink = page.getByRole("link", { name: "Maintenance Pages" });
     this.maintenanceModeLink = page.getByRole("link", { name: "Maintenance Mode" });
-    this.settingsLink = page.getByRole("link", { name: "HAProxy" });
+    this.settingsLink = page.getByRole("link", { name: "Settings" });
   }
 
   async navigateToDashboard() {

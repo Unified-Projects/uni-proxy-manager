@@ -92,10 +92,12 @@ services:
     build:
       context: ../../..
       dockerfile: apps/api/Dockerfile
+      target: builder
     container_name: uni-proxy-e2e-db-migrate
     command: ["sh", "-c", "pnpm --filter @uni-proxy-manager/database db:push"]
     environment:
       UNI_PROXY_MANAGER_DB_URL: "postgresql://e2e_user:e2e_password@e2e-postgres:5432/uni_proxy_e2e?sslmode=disable"
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
     networks:
       - e2e-network
     depends_on:

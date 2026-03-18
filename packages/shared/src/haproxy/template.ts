@@ -4,6 +4,7 @@ import type {
   HAProxyDefaultsConfig,
   HAProxyFrontend,
   HAProxyBackend,
+  HAProxyACL,
   HAProxyUseBackend,
   HAProxyClusterPeer,
   DomainConfig,

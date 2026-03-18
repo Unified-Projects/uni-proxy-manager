@@ -86,17 +86,21 @@ app.get("/:token/verify", async (c) => {
 // Strict rate limiting to prevent brute-force attacks (10 requests per minute per IP)
 app.post("/:token/auth", strictRateLimiter, async (c) => {
   const token = c.req.param("token");
+  if (!token) {
+    return c.json({ error: { code: "INVALID_TOKEN", message: "Token is required" } }, 400);
+  }
   const config = await getConfigByToken(token);
 
   if (!config || !config.publicDashboardEnabled || !config.publicDashboardPasswordHash) {
     return c.json({ error: { code: "NOT_FOUND", message: "Dashboard not found" } }, 404);
   }
+  const passwordHash = config.publicDashboardPasswordHash;
 
   let body: Record<string, unknown>;
   try { body = await c.req.json(); } catch { return c.json({ error: { code: "INVALID_BODY", message: "Invalid JSON" } }, 400); }
 
   const password = String(body.password || "");
-  const isValid = await bcrypt.compare(password, config.publicDashboardPasswordHash);
+  const isValid = await bcrypt.compare(password, passwordHash);
 
   if (!isValid) {
     return c.json({ error: { code: "INVALID_PASSWORD", message: "Incorrect password" } }, 401);

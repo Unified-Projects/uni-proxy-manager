@@ -278,7 +278,7 @@ async function init() {
   }
 }
 
-// Track the Bun server instance so we can stop it during shutdown
+// Track the Bun server instance so we can stop it during shutdown when available
 let serverInstance: ReturnType<typeof Bun.serve> | null = null;
 
 // Track in-flight requests so we can drain before shutdown
@@ -357,11 +357,6 @@ const serverConfig = {
   websocket: wsDelegate,
 };
 
-// Store reference to the server instance so shutdown can call .stop()
-// Bun.serve returns the server when the default export is used,
-// but we also capture it explicitly for the shutdown handler.
-if (typeof Bun !== "undefined" && typeof Bun.serve === "function") {
-  serverInstance = Bun.serve(serverConfig);
-}
-
+// Bun auto-serves the default exported server config for entrypoints.
+// We intentionally do not call Bun.serve() here to avoid double-binding the port.
 export default serverConfig;

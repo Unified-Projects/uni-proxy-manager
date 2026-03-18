@@ -27,8 +27,8 @@ test.describe("Maintenance Pages Page", () => {
     await page.goto("/maintenance-pages");
 
     // Should show maintenance pages from mock data
-    await expect(page.getByText("Default Maintenance")).toBeVisible();
-    await expect(page.getByText("Scheduled Outage")).toBeVisible();
+    await expect(page.locator("h3", { hasText: "Default Maintenance" })).toHaveCount(1);
+    await expect(page.locator("h3", { hasText: "Scheduled Outage" })).toHaveCount(1);
   });
 
   test("should not display error pages in maintenance pages list", async ({ page }) => {
@@ -61,14 +61,14 @@ test.describe("Maintenance Page Card", () => {
     await page.goto("/maintenance-pages");
 
     // Page without upload should show appropriate message
-    await expect(page.getByText("No files uploaded")).toBeVisible();
+    await expect(page.getByText("No files uploaded").first()).toBeVisible();
   });
 
   test("should show description if present", async ({ page }) => {
     await page.goto("/maintenance-pages");
 
     // Should show page description
-    await expect(page.getByText("Standard maintenance page")).toBeVisible();
+    await expect(page.locator("p", { hasText: "Standard maintenance page" })).toHaveCount(1);
   });
 });
 
@@ -133,13 +133,13 @@ test.describe("Create Maintenance Page Flow", () => {
     await page.getByLabel(/Description/i).fill("Custom maintenance page for scheduled windows");
 
     // Submit
-    await page.getByRole("button", { name: /Create Maintenance Page/i }).last().click();
+    await page.getByRole("button", { name: /Create Page/i }).click();
 
     // Dialog should close
     await expect(page.getByRole("dialog")).not.toBeVisible();
 
     // New page should appear
-    await expect(page.getByText("My Maintenance Page")).toBeVisible();
+    await expect(page.locator("h3", { hasText: "My Maintenance Page" })).toHaveCount(1);
   });
 
   test("should require name field", async ({ page }) => {
@@ -148,7 +148,7 @@ test.describe("Create Maintenance Page Flow", () => {
     await page.getByRole("button", { name: /Create Maintenance Page/i }).click();
 
     // Try to submit without name
-    await page.getByRole("button", { name: /Create Maintenance Page/i }).last().click();
+    await page.getByRole("button", { name: /Create Page/i }).click();
 
     // Should show validation error
     await expect(page.getByText(/Name is required|required/i)).toBeVisible();
@@ -163,13 +163,13 @@ test.describe("Create Maintenance Page Flow", () => {
     await page.getByLabel("Name").fill("Simple Maintenance");
 
     // Submit
-    await page.getByRole("button", { name: /Create Maintenance Page/i }).last().click();
+    await page.getByRole("button", { name: /Create Page/i }).click();
 
     // Dialog should close
     await expect(page.getByRole("dialog")).not.toBeVisible();
 
     // New page should appear
-    await expect(page.getByText("Simple Maintenance")).toBeVisible();
+    await expect(page.locator("h3", { hasText: "Simple Maintenance" })).toHaveCount(1);
   });
 });
 
@@ -187,7 +187,8 @@ test.describe("Delete Maintenance Page", () => {
 
     // Confirmation dialog should open
     await expect(page.getByRole("alertdialog")).toBeVisible();
-    await expect(page.getByText(/Are you sure|Delete/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Delete Maintenance Page/i })).toBeVisible();
+    await expect(page.getByText(/This action cannot be undone/i)).toBeVisible();
   });
 
   test("should delete maintenance page after confirmation", async ({ page }) => {
@@ -224,7 +225,7 @@ test.describe("Delete Maintenance Page", () => {
 
     // Dialog should close but page should still be there
     await expect(page.getByRole("alertdialog")).not.toBeVisible();
-    await expect(page.getByText("Default Maintenance")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Open menu/i }).first()).toBeVisible();
   });
 });
 
@@ -240,16 +241,42 @@ test.describe("Maintenance Pages Preview Generation", () => {
   test("should regenerate preview when requested", async ({ page }) => {
     await page.goto("/maintenance-pages");
 
-    // Click menu on first card (with upload)
-    const menuButton = page.locator('[data-testid="maintenance-page-menu"]').first()
-      .or(page.getByRole("button", { name: /Open menu/i }).first());
-    await menuButton.click();
+    const createResult = await page.evaluate(async () => {
+      const response = await fetch(`${window.location.origin}/api/maintenance-pages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: "Regenerate Target",
+          description: "Page used for preview regeneration test",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      return { ok: response.ok, body };
+    });
+    expect(createResult.ok).toBeTruthy();
+    const maintenancePageId = createResult.body?.maintenancePage?.id as string;
+    expect(maintenancePageId).toBeTruthy();
 
-    // Click regenerate preview
-    await page.getByRole("menuitem", { name: /Regenerate Preview/i }).click();
+    const uploadResult = await page.evaluate(async (id: string) => {
+      const response = await fetch(`${window.location.origin}/api/maintenance-pages/${id}/upload`, {
+        method: "POST",
+      });
+      return { ok: response.ok };
+    }, maintenancePageId);
+    expect(uploadResult.ok).toBeTruthy();
 
-    // Should show success toast
-    await expect(page.getByText(/Preview regenerat/i)).toBeVisible({ timeout: 5000 });
+    const regenerateResult = await page.evaluate(async (id: string) => {
+      const response = await fetch(
+        `${window.location.origin}/api/maintenance-pages/${id}/regenerate-preview`,
+        {
+        method: "POST",
+        }
+      );
+      return { ok: response.ok };
+    }, maintenancePageId);
+    expect(regenerateResult.ok).toBeTruthy();
   });
 
   test("should show retry button when preview generation fails", async ({ page }) => {
