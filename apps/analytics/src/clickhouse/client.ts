@@ -1,4 +1,4 @@
-import { createClient, ClickHouseClient } from "@clickhouse/client";
+import { createClient, type ClickHouseClient } from "@clickhouse/client";
 import { getClickHouseUrl, getClickHousePassword } from "@uni-proxy-manager/shared/config";
 
 let client: ClickHouseClient | null = null;

@@ -15,7 +15,7 @@ const app = new Hono();
 
 function validatePathPattern(pattern: string): boolean {
   if (pattern.length > 500) return false;
-  return /^[a-zA-Z0-9\/*\-_.]+$/.test(pattern);
+  return /^[a-zA-Z0-9/*\-_.]+$/.test(pattern);
 }
 
 function validateEventName(name: string): boolean {

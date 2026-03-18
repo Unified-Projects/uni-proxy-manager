@@ -433,26 +433,26 @@ describe("Health Check Processor", () => {
   describe("Error handling", () => {
     it("should handle network errors as unhealthy", () => {
       const error = new Error("Connection refused");
-      let isHealthy = true;
-
-      try {
-        throw error;
-      } catch {
-        isHealthy = false;
-      }
+      const isHealthy = (() => {
+        try {
+          throw error;
+        } catch {
+          return false;
+        }
+      })();
 
       expect(isHealthy).toBe(false);
     });
 
     it("should handle timeout as unhealthy", () => {
       const error = new Error("AbortError: Timeout");
-      let isHealthy = true;
-
-      try {
-        throw error;
-      } catch {
-        isHealthy = false;
-      }
+      const isHealthy = (() => {
+        try {
+          throw error;
+        } catch {
+          return false;
+        }
+      })();
 
       expect(isHealthy).toBe(false);
     });

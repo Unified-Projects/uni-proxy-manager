@@ -228,7 +228,7 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgsample-test-key
       // First apply
       await testClient.post("/api/haproxy/apply");
 
-      let firstMtime: Date | null = null;
+      let firstMtime: Date;
       try {
         const stats = await stat(configPath);
         firstMtime = stats.mtime;

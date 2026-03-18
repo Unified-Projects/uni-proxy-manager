@@ -55,18 +55,16 @@ app.get("/:uuid/pixel.gif", async (c) => {
 
   // Validate Referer header.
   const referer = c.req.header("Referer") || "";
-  let pathname = "/";
-  let refererHostname = "";
+  let refUrl: URL;
 
   try {
-    const refUrl = new URL(referer);
-    refererHostname = refUrl.hostname;
-    pathname = refUrl.pathname;
+    refUrl = new URL(referer);
   } catch {
     // No valid referer -- return pixel without tracking.
     return pixelResponse();
   }
 
+  const refererHostname = refUrl.hostname;
   if (refererHostname !== config.hostname) {
     return pixelResponse();
   }
@@ -109,7 +107,7 @@ app.get("/:uuid/pixel.gif", async (c) => {
   ingestEvent({
     configId: config.id,
     eventType: "pageview",
-    pathname,
+    pathname: refUrl.pathname,
     referrer: referer,
     referrerDomain: refererHostname,
     utmSource: "",

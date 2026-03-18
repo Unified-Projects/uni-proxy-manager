@@ -22,7 +22,16 @@ export const MAX_META_KEYS = 20;
  * Strip control characters (0x00-0x1F) except tab (0x09) and newline (0x0A, 0x0D).
  */
 export function stripControlChars(str: string): string {
-  return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  let output = "";
+  for (const char of str) {
+    const code = char.charCodeAt(0);
+    const isControl = code <= 0x1f;
+    const isAllowedWhitespace = code === 0x09 || code === 0x0a || code === 0x0d;
+    if (!isControl || isAllowedWhitespace) {
+      output += char;
+    }
+  }
+  return output;
 }
 
 /**

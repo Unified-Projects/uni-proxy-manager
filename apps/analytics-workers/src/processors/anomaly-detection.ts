@@ -5,7 +5,7 @@
  * deviations. Baselines are recomputed daily.
  */
 
-import { Job } from "bullmq";
+import { type Job } from "bullmq";
 import { db } from "@uni-proxy-manager/database";
 import { analyticsConfig } from "@uni-proxy-manager/database";
 import { eq } from "drizzle-orm";

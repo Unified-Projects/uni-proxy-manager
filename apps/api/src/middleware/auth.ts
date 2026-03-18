@@ -9,7 +9,7 @@ let getConnInfo: ((c: Context) => { remote?: { address?: string } }) | null = nu
 try {
   // Only import hono/bun if running in Bun
   if (typeof globalThis.Bun !== "undefined") {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const honoBun = require("hono/bun");
     getConnInfo = honoBun.getConnInfo;
   }

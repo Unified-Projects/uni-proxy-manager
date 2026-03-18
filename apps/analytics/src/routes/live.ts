@@ -24,7 +24,7 @@ import { internalAuth } from "../middleware/internal-auth";
 import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { getAnalyticsJwtSecret } from "@uni-proxy-manager/shared/config";
 import * as jose from "jose";
-import Redis from "ioredis";
+import type Redis from "ioredis";
 
 type WsClient = {
   data: WsData;

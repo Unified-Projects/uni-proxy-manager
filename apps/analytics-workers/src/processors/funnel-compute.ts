@@ -5,7 +5,7 @@
  * from ClickHouse and checking each session against the funnel definition.
  */
 
-import { Job } from "bullmq";
+import { type Job } from "bullmq";
 import { db } from "@uni-proxy-manager/database";
 import { analyticsFunnels, analyticsFunnelResults } from "@uni-proxy-manager/database";
 import { eq, and } from "drizzle-orm";

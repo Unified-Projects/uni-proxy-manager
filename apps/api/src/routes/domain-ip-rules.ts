@@ -153,7 +153,7 @@ app.post("/:domainId/ip-rules/toggle", async (c) => {
       return c.json({ error: "Domain not found" }, 404);
     }
 
-    let ipRule = await db.query.domainIpRules.findFirst({
+    const ipRule = await db.query.domainIpRules.findFirst({
       where: eq(domainIpRules.domainId, domainId),
     });
 

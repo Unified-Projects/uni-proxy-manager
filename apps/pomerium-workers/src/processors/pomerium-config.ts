@@ -178,7 +178,13 @@ function configToYaml(config: PomeriumConfig): string {
     Scalar(_, node) {
       if (
         typeof node.value === "string" &&
-        (/[\[\]\{\}]/.test(node.value) || node.value.startsWith(":"))
+        (
+          node.value.includes("[") ||
+          node.value.includes("]") ||
+          node.value.includes("{") ||
+          node.value.includes("}") ||
+          node.value.startsWith(":")
+        )
       ) {
         node.type = "QUOTE_DOUBLE";
       }

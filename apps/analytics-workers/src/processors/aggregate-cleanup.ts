@@ -6,7 +6,7 @@
  * are removed.
  */
 
-import { Job } from "bullmq";
+import { type Job } from "bullmq";
 import { getClickHouseClient } from "../clickhouse";
 import type { AnalyticsAggregateCleanupJobData } from "@uni-proxy-manager/queue";
 

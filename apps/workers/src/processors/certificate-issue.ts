@@ -1,4 +1,4 @@
-import { Job, Queue } from "bullmq";
+import { type Job, Queue } from "bullmq";
 import { type CertificateIssueJobData, type CertificateResult, QUEUES, type HaproxyReloadJobData } from "@uni-proxy-manager/queue";
 import { db } from "@uni-proxy-manager/database";
 import { certificates, dnsProviders, domains } from "@uni-proxy-manager/database/schema";

@@ -57,7 +57,7 @@ function getRedis(): Redis | null {
   if (!_redis) {
     try {
       // Dynamic require to avoid circular dependency at module-load time
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+       
       const { getRedisClient } = require("@uni-proxy-manager/shared/redis");
       _redis = getRedisClient() as Redis;
       _redisAvailable = true;

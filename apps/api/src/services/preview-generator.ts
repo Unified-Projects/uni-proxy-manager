@@ -1,6 +1,6 @@
 import { chromium, type Browser } from "playwright";
 import { writeFile, mkdir } from "fs/promises";
-import { join, dirname, isAbsolute } from "path";
+import { join, isAbsolute } from "path";
 import { getErrorPagesDir } from "@uni-proxy-manager/shared/config";
 
 let browser: Browser | null = null;
@@ -95,7 +95,10 @@ export async function generatePreview(
     return `${errorPageId}/preview.png`;
   } catch (error) {
     console.error(`[PreviewGenerator] Error generating preview for ${errorPageId}:`, error);
-    throw new Error(`Failed to generate preview: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to generate preview: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
+    );
   }
 }
 

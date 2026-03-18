@@ -294,13 +294,13 @@ describe("Site Analytics Processor", () => {
 
     it("should handle invalid referrer URL gracefully", () => {
       const invalidUrl = "not-a-valid-url";
-      let referrerDomain: string | null = null;
-
-      try {
-        referrerDomain = new URL(invalidUrl).hostname;
-      } catch {
-        referrerDomain = null;
-      }
+      const referrerDomain = (() => {
+        try {
+          return new URL(invalidUrl).hostname;
+        } catch {
+          return null;
+        }
+      })();
 
       expect(referrerDomain).toBeNull();
     });
@@ -581,13 +581,13 @@ describe("Site Analytics Processor", () => {
   describe("Error handling", () => {
     it("should handle JSON parse errors gracefully", () => {
       const invalidJson = "not valid json";
-      let result: GeoData = {};
-
-      try {
-        result = JSON.parse(invalidJson);
-      } catch {
-        result = {};
-      }
+      const result: GeoData = (() => {
+        try {
+          return JSON.parse(invalidJson);
+        } catch {
+          return {};
+        }
+      })();
 
       expect(result).toEqual({});
     });
