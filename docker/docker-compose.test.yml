@@ -240,7 +240,8 @@ services:
   test-dex:
     image: dexidp/dex:v2.38.0
     container_name: uni-proxy-manager-test-dex
-    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    entrypoint: ["dex"]
+    command: ["serve", "/etc/dex/config.yaml"]
     volumes:
       - ./test-data/dex:/etc/dex:ro
     healthcheck:

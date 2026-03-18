@@ -155,6 +155,14 @@ jobs:
             - name: Run integration suite (equivalent to run-tests.sh --all integration path)
               run: docker exec -e SKIP_URT_TESTS=true uni-proxy-manager-test-runner pnpm exec vitest run --config vitest.config.integration.ts
 
+            - name: Debug Docker Services On Failure
+              if: failure()
+              run: |
+                  docker compose -f docker/docker-compose.test.yml ps
+                  docker logs uni-proxy-manager-test-dex || true
+                  docker logs uni-proxy-manager-test-backend || true
+                  docker logs uni-proxy-manager-test-db-migrate || true
+
             - name: Cleanup
               if: always()
               run: docker compose -f docker/docker-compose.test.yml down -v --remove-orphans
