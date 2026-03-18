@@ -1,0 +1,26 @@
+{
+  "name": "@uni-proxy-manager/pomerium-workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun run dist/index.js",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@uni-proxy-manager/database": "workspace:*",
+    "@uni-proxy-manager/queue": "workspace:*",
+    "@uni-proxy-manager/shared": "workspace:*",
+    "bullmq": "^5.71.0",
+    "drizzle-orm": "^0.45.1",
+    "ioredis": "5.10.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "typescript": "^5.9.3"
+  }
+}

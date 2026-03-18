@@ -1,0 +1,33 @@
+{
+  "name": "@uni-proxy-manager/queue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./queues": {
+      "types": "./src/queues.ts",
+      "default": "./src/queues.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
+    }
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "bullmq": "^5.71.0",
+    "ioredis": "5.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,198 @@
+# Real E2E Tests Docker Compose
+#
+# This runs actual services with the real URT-Executor to test
+# the full deployment flow end-to-end.
+#
+# Usage:
+#   docker compose -f tests/e2e-real/setup/docker-compose.e2e.yml up -d
+#   pnpm test:e2e-real
+#   docker compose -f tests/e2e-real/setup/docker-compose.e2e.yml down -v
+
+services:
+  e2e-postgres:
+    image: postgres:16-alpine
+    container_name: uni-proxy-e2e-postgres
+    environment:
+      POSTGRES_USER: e2e_user
+      POSTGRES_PASSWORD: e2e_password
+      POSTGRES_DB: uni_proxy_e2e
+    ports:
+      - "127.0.0.1:5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2e_user -d uni_proxy_e2e"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - e2e-postgres-data:/var/lib/postgresql/data
+    networks:
+      - e2e-network
+
+  e2e-redis:
+    image: redis:7-alpine
+    container_name: uni-proxy-e2e-redis
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - e2e-redis-data:/data
+    networks:
+      - e2e-network
+
+  # Real URT-Executor for testing
+  e2e-executor:
+    image: unifiedprojects/urt-executor:v0.1.0-beta-5
+    container_name: uni-proxy-e2e-executor
+    hostname: exc1
+    restart: unless-stopped
+    stop_signal: SIGINT
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      OPR_EXECUTOR_IMAGE_PULL: enabled
+      OPR_EXECUTOR_ENV: development
+      OPR_EXECUTOR_RUNTIMES: node-20.0,node-22
+      OPR_EXECUTOR_NETWORK: uni-proxy-e2e-openruntimes-network
+      OPR_EXECUTOR_SECRET: e2e-test-executor-secret
+      OPR_EXECUTOR_RUNTIME_VERSIONS: v5
+      OPR_EXECUTOR_INACTIVE_TRESHOLD: "600"
+      OPR_EXECUTOR_MAINTENANCE_INTERVAL: "3600"
+      OPR_EXECUTOR_STORAGE_DEVICE: local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/uni-proxy-e2e/builds:/storage/builds:rw
+      - /tmp/uni-proxy-e2e/functions:/storage/functions:rw
+      - /tmp/uni-proxy-e2e/sites:/storage/sites:rw
+      - /tmp:/tmp:rw
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "authorization: Bearer e2e-test-executor-secret",
+          "http://127.0.0.1/v1/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - e2e-network
+      - e2e-openruntimes-network
+
+  # Database migrations
+  e2e-db-migrate:
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
+    container_name: uni-proxy-e2e-db-migrate
+    command: ["sh", "-c", "pnpm --filter @uni-proxy-manager/database db:push"]
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: "postgresql://e2e_user:e2e_password@e2e-postgres:5432/uni_proxy_e2e?sslmode=disable"
+    networks:
+      - e2e-network
+    depends_on:
+      e2e-postgres:
+        condition: service_healthy
+
+  # API server for tests
+  e2e-api:
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
+    container_name: uni-proxy-e2e-api
+    ports:
+      - "127.0.0.1:3099:3001"
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: "postgresql://e2e_user:e2e_password@e2e-postgres:5432/uni_proxy_e2e?sslmode=disable"
+      UNI_PROXY_MANAGER_REDIS_URL: "redis://e2e-redis:6379"
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: "/data/haproxy/haproxy.cfg"
+      UNI_PROXY_MANAGER_CERTS_DIR: "/data/certificates"
+      UNI_PROXY_MANAGER_ERROR_PAGES_DIR: "/data/error-pages"
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: "/var/run/haproxy/haproxy.sock"
+      NODE_ENV: "production"
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
+      SITES_EXECUTOR_ENDPOINT: "http://e2e-executor:80"
+      SITES_EXECUTOR_SECRET: "e2e-test-executor-secret"
+      SITES_PROXY_ENDPOINT: "http://e2e-api:3001"
+    volumes:
+      - ./e2e-test-data/haproxy:/data/haproxy:rw
+      - ./e2e-test-data/certificates:/data/certificates:rw
+      - ./e2e-test-data/error-pages:/data/error-pages:rw
+      - ./e2e-test-data/sites:/data/sites:rw
+      - e2e-haproxy-socket:/var/run/haproxy:ro
+    networks:
+      - e2e-network
+    depends_on:
+      e2e-postgres:
+        condition: service_healthy
+      e2e-redis:
+        condition: service_healthy
+      e2e-executor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Sites workers for processing deployments
+  e2e-sites-workers:
+    build:
+      context: ../../..
+      dockerfile: apps/sites-workers/Dockerfile
+    container_name: uni-proxy-e2e-sites-workers
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
+      UNI_PROXY_MANAGER_DB_URL: "postgresql://e2e_user:e2e_password@e2e-postgres:5432/uni_proxy_e2e?sslmode=disable"
+      UNI_PROXY_MANAGER_REDIS_URL: "redis://e2e-redis:6379"
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      SITES_EXECUTOR_ENDPOINT: "http://e2e-executor:80"
+      SITES_EXECUTOR_SECRET: "e2e-test-executor-secret"
+      SITES_PROXY_ENDPOINT: "http://e2e-api:3001"
+      SITES_STORAGE_DIR: /storage/functions
+      SITES_BUILDS_DIR: /storage/builds
+      SITES_USE_EXECUTOR_BUILDS: "true"
+      # Shorter startup timeout for faster tests
+      SITES_RUNTIME_STARTUP_TIMEOUT_SECONDS: "120"
+    volumes:
+      - ./e2e-test-data/sites:/data/sites:rw
+      - ./e2e-test-data/haproxy:/data/haproxy:rw
+      - e2e-haproxy-socket:/var/run/haproxy:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/uni-proxy-e2e/functions:/storage/functions:rw
+      - /tmp/uni-proxy-e2e/builds:/storage/builds:rw
+    networks:
+      - e2e-network
+    depends_on:
+      e2e-postgres:
+        condition: service_healthy
+      e2e-redis:
+        condition: service_healthy
+      e2e-executor:
+        condition: service_healthy
+      e2e-api:
+        condition: service_healthy
+
+networks:
+  e2e-network:
+    name: uni-proxy-e2e-network
+    driver: bridge
+  e2e-openruntimes-network:
+    name: uni-proxy-e2e-openruntimes-network
+    driver: bridge
+
+volumes:
+  e2e-postgres-data:
+  e2e-redis-data:
+  e2e-haproxy-socket:

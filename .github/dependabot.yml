@@ -1,0 +1,361 @@
+version: 2
+updates:
+  # Enable version updates for npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      # TypeScript and type definitions
+      typescript:
+        patterns:
+          - "typescript"
+          - "@types/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Testing frameworks and utilities
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "playwright"
+          - "@playwright/*"
+          - "jest"
+          - "@jest/*"
+          - "@testing-library/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Linting and formatting
+      linting:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@eslint/*"
+          - "prettier"
+          - "prettier-*"
+          - "@typescript-eslint/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Build tools
+      build-tools:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "turbo"
+          - "tsup"
+          - "esbuild"
+          - "rollup"
+          - "rollup-*"
+          - "@rollup/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # React ecosystem
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "react-*"
+          - "@react-*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Next.js ecosystem
+      nextjs:
+        patterns:
+          - "next"
+          - "@next/*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Fastify ecosystem
+      fastify:
+        patterns:
+          - "fastify"
+          - "@fastify/*"
+          - "fastify-*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Database and ORM
+      database:
+        patterns:
+          - "drizzle-orm"
+          - "drizzle-kit"
+          - "drizzle-*"
+          - "pg"
+          - "postgres"
+          - "@neondatabase/*"
+          - "redis"
+          - "ioredis"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Minor and patch dev dependencies (catch-all)
+      dev-dependencies-minor:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "typescript"
+          - "@types/*"
+          - "vitest"
+          - "@vitest/*"
+          - "playwright"
+          - "@playwright/*"
+          - "eslint*"
+          - "@eslint/*"
+          - "prettier*"
+          - "@typescript-eslint/*"
+          - "vite"
+          - "@vitejs/*"
+          - "turbo"
+      # Minor and patch production dependencies (catch-all)
+      production-dependencies-minor:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "react*"
+          - "next"
+          - "@next/*"
+          - "fastify*"
+          - "@fastify/*"
+          - "drizzle-*"
+          - "pg"
+          - "postgres"
+          - "redis"
+          - "ioredis"
+
+  # Enable version updates for Cargo (Rust - sites-lookup)
+  - package-ecosystem: "cargo"
+    directory: "/apps/sites-lookup"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  # Enable version updates for Docker base images
+  - package-ecosystem: "docker"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/workers"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/sites-workers"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/sites-lookup"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/pomerium-workers"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/docker/db-migrate"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/docker/sites-db-migrate"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/docker/pomerium-db-migrate"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    reviewers:
+      - "zaknoble-clarke"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"

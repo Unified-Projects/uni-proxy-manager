@@ -1,0 +1,372 @@
+services:
+  test-db-migrate:
+    build:
+      context: ..
+      dockerfile: docker/db-migrate/Dockerfile
+    container_name: uni-proxy-manager-test-db-migrate
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/uni_proxy_manager_test?sslmode=disable
+      - UNI_PROXY_MANAGER_DB_URL=postgresql://test_user:test_password@test-postgres:5432/uni_proxy_manager_test?sslmode=disable
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  test-runner:
+    image: node:20-bookworm
+    container_name: uni-proxy-manager-test-runner
+    working_dir: /app
+    volumes:
+      - ..:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/uni_proxy_manager_test?sslmode=disable
+      - UNI_PROXY_MANAGER_DB_URL=postgresql://test_user:test_password@test-postgres:5432/uni_proxy_manager_test?sslmode=disable
+      - UNI_PROXY_MANAGER_REDIS_URL=redis://test-redis:6379
+      - SITES_S3_ENDPOINT=http://test-minio:9000
+      - SITES_S3_BUCKET=test-bucket
+      - SITES_S3_ACCESS_KEY=minioadmin
+      - SITES_S3_SECRET_KEY=minioadmin
+      - SITES_S3_REGION=us-east-1
+      - SITES_EXECUTOR_ENDPOINT=http://test-executor:80
+      - SITES_EXECUTOR_SECRET=test-executor-secret
+      - POMERIUM_INTERNAL_URL=http://test-pomerium:80
+      - POMERIUM_URL=http://test-pomerium:80
+      - POMERIUM_CONFIG_PATH=/app/docker/test-data/pomerium/policy.yaml
+      - DEX_ISSUER_URL=http://test-dex:5556/dex
+      - UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH=/app/docker/test-data/haproxy/haproxy.cfg
+      - UNI_PROXY_MANAGER_CERTS_DIR=/app/docker/test-data/certificates
+      - UNI_PROXY_MANAGER_ERROR_PAGES_DIR=/app/docker/test-data/error-pages
+      - SITES_SOURCE_DIR=/app/docker/test-data/sites/sources
+      - SITES_BUILD_DIR=/app/docker/test-data/sites/builds
+      - SITES_DEPLOY_DIR=/app/docker/test-data/sites/deploys
+      # Pebble ACME test server (auto-validates all challenges)
+      - ACME_DIRECTORY_URL=https://test-pebble:14000/dir
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+      # Analytics integration test variables
+      - UNI_PROXY_MANAGER_CLICKHOUSE_URL=http://test-clickhouse:8123
+      - UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD=test_clickhouse_password
+      - UNI_PROXY_MANAGER_INTERNAL_SECRET=test-internal-secret
+      - UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET=test-jwt-secret-at-least-32-chars!!
+      - TEST_ANALYTICS_URL=http://test-analytics:3003
+      - TEST_WEBSITE_URL=http://test-website:80
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm exec playwright install chromium --with-deps && echo 'Waiting for Pomerium...' && for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null http://test-pomerium:80/.pomerium/health && echo 'Pomerium responding' && break || sleep 3; done && echo 'Test runner ready - waiting for test execution' && tail -f /dev/null"
+    healthcheck:
+      test: ["CMD", "pnpm", "exec", "vitest", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    depends_on:
+      test-db-migrate:
+        condition: service_completed_successfully
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      test-minio:
+        condition: service_healthy
+      test-haproxy:
+        condition: service_healthy
+      test-pebble:
+        condition: service_started
+      test-dex:
+        condition: service_healthy
+      test-pomerium:
+        condition: service_started
+      test-analytics:
+        condition: service_healthy
+      test-website:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  test-postgres:
+    image: postgres:16-alpine
+    container_name: uni-proxy-manager-test-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: uni_proxy_manager_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d uni_proxy_manager_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - test-network
+
+  test-redis:
+    image: redis:7-alpine
+    container_name: uni-proxy-manager-test-redis
+    ports:
+      - "6382:6379"
+    command: redis-server --appendonly no --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - test-network
+
+  test-haproxy:
+    image: haproxy:2.9-alpine
+    container_name: uni-proxy-manager-test-haproxy
+    volumes:
+      - ./test-data/haproxy:/usr/local/etc/haproxy:rw
+      - ./test-data/certificates:/data/certificates:ro
+      - ./test-data/error-pages:/data/error-pages:ro
+      - test-haproxy-socket:/var/run/haproxy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        cat > /usr/local/etc/haproxy/haproxy.cfg << 'EOF'
+        global
+            log stdout format raw local0
+            maxconn 4096
+
+        defaults
+            log global
+            mode http
+            option httplog
+            timeout connect 5s
+            timeout client 50s
+            timeout server 50s
+
+        frontend http_front
+            mode http
+            bind *:80
+            default_backend test_backend
+
+        backend test_backend
+            mode http
+            balance roundrobin
+            server backend uni-proxy-manager-test-backend:80 check
+        EOF
+        exec haproxy -f /usr/local/etc/haproxy/haproxy.cfg
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - test-network
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      test-backend:
+        condition: service_healthy
+
+  test-backend:
+    image: nginx:alpine
+    container_name: uni-proxy-manager-test-backend
+    volumes:
+      - ./test-data/nginx:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  test-executor:
+    image: unifiedprojects/urt-executor:v0.1.0-beta-5
+    container_name: uni-proxy-manager-test-executor
+    hostname: test-executor
+    environment:
+      - OPR_EXECUTOR_SECRET=test-executor-secret
+      - OPR_EXECUTOR_RUNTIMES=node-22,node-20.0,node-18.0
+      - OPR_EXECUTOR_NETWORK=openruntimes-test-runtimes
+      - OPR_EXECUTOR_RUNTIME_VERSIONS=v5
+      - OPR_EXECUTOR_ENV=test
+      - OPR_EXECUTOR_INACTIVE_TRESHOLD=300
+      - OPR_EXECUTOR_MAINTENANCE_INTERVAL=600
+      - OPR_EXECUTOR_STORAGE_DEVICE=local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - test-executor-storage:/storage
+      - test-executor-tmp:/tmp
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "authorization: Bearer test-executor-secret",
+          "http://127.0.0.1/v1/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    networks:
+      - test-network
+      - openruntimes-test-runtimes
+
+  test-minio:
+    image: minio/minio:latest
+    container_name: uni-proxy-manager-test-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - test-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  test-dex:
+    image: dexidp/dex:v2.38.0
+    container_name: uni-proxy-manager-test-dex
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./test-data/dex:/etc/dex:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5558/metrics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - test-network
+
+  test-pomerium:
+    image: pomerium/pomerium:v0.26.0
+    container_name: uni-proxy-manager-test-pomerium
+    volumes:
+      - ./test-data/pomerium:/pomerium:rw
+    environment:
+      - POMERIUM_DEBUG=true
+      - LOG_LEVEL=debug
+      - ADDRESS=:80
+      - INSECURE_SERVER=true
+      - IDP_PROVIDER=oidc
+      - IDP_PROVIDER_URL=http://test-dex:5556/dex
+      - IDP_CLIENT_ID=pomerium-test
+      - IDP_CLIENT_SECRET=pomerium-test-secret
+      - IDP_SCOPES=openid,profile,email,groups
+      - COOKIE_SECRET=V2JBZHk2a3NNQW5ScG9IY25JNzdLcXppSVByS09Qdmo=
+      - SHARED_SECRET=V2JBZHk2a3NNQW5ScG9IY25JNzdLcXppSVByS09Qdmo=
+      - AUTHENTICATE_SERVICE_URL=http://test-pomerium:80
+      - AUTHORIZE_SERVICE_URL=http://test-pomerium:80
+      - DATABROKER_SERVICE_URL=http://test-pomerium:80
+      - DATABROKER_STORAGE_TYPE=memory
+      - AUTOCERT=false
+    depends_on:
+      test-dex:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # ClickHouse - Analytics event storage
+  test-clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: uni-proxy-manager-test-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: analytics
+      CLICKHOUSE_PASSWORD: test_clickhouse_password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    tmpfs:
+      - /var/lib/clickhouse
+    networks:
+      - test-network
+
+  # Analytics service
+  test-analytics:
+    build:
+      context: ..
+      dockerfile: apps/analytics/Dockerfile
+    container_name: uni-proxy-manager-test-analytics
+    environment:
+      - UNI_PROXY_MANAGER_DB_URL=postgresql://test_user:test_password@test-postgres:5432/uni_proxy_manager_test?sslmode=disable
+      - UNI_PROXY_MANAGER_REDIS_URL=redis://test-redis:6379
+      - UNI_PROXY_MANAGER_CLICKHOUSE_URL=http://test-clickhouse:8123
+      - UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD=test_clickhouse_password
+      - UNI_PROXY_MANAGER_INTERNAL_SECRET=test-internal-secret
+      - UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET=test-jwt-secret-at-least-32-chars!!
+      - NODE_ENV=test
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3003/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    depends_on:
+      test-db-migrate:
+        condition: service_completed_successfully
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      test-clickhouse:
+        condition: service_healthy
+    networks:
+      - test-network
+
+  # Test website for analytics CORS/origin testing
+  test-website:
+    image: nginx:alpine
+    container_name: uni-proxy-manager-test-website
+    volumes:
+      - ./test-data/analytics-website:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  # Pebble - Let's Encrypt test ACME server for certificate testing
+  test-pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    container_name: uni-proxy-manager-test-pebble
+    environment:
+      - PEBBLE_VA_NOSLEEP=1
+      - PEBBLE_VA_ALWAYS_VALID=1
+      - PEBBLE_WFE_NONCEREJECT=0
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    name: uni-proxy-manager-test-network
+    driver: bridge
+  openruntimes-test-runtimes:
+    name: openruntimes-test-runtimes
+    driver: bridge
+
+volumes:
+  test-haproxy-socket:
+  test-executor-storage:
+  test-executor-tmp:
+  test-minio-data:
+  test-pomerium-config:

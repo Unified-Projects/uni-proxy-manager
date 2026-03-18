@@ -1,0 +1,83 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+.turbo/
+out/
+*.tsbuildinfo
+
+# Rust
+target/
+Cargo.lock
+*.rlib
+*.rmeta
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+docker/test-data/
+
+# Local scripts (user-specific, not committed)
+scripts-local/
+
+# Data directories (Docker volumes)
+data/
+
+# Secrets
+*.pem
+*.key
+!*.example.key
+secrets/
+
+# Backup files
+*.bak
+
+# Archives and build artifacts
+*.tar.gz
+*.zip
+*.tar
+
+# Docker
+*.pid
+
+# Docker local overrides
+docker-compose.override.yml
+
+# Local databases and backups
+*.sql.backup
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Temp files
+tmp/
+temp/
+
+# Local one-off output
+test.out.txt

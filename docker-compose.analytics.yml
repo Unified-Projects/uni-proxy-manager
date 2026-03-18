@@ -1,0 +1,103 @@
+# Analytics Extension for Uni-Proxy-Manager
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.analytics.yml up -d
+#
+# This extension adds:
+# - Privacy-first web analytics with ClickHouse storage
+# - Real-time visitor tracking via WebSocket
+# - Funnel computation and anomaly detection workers
+# - Public shareable dashboards
+#
+# Required environment variables:
+#   UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD - ClickHouse password (no default, must be set)
+#   UNI_PROXY_MANAGER_INTERNAL_SECRET - Shared secret for internal API communication
+#   UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET - Secret for public dashboard JWT signing (min 32 bytes)
+
+services:
+  # Override: pass analytics env vars to the API service
+  api:
+    environment:
+      UNI_PROXY_MANAGER_ANALYTICS_ENDPOINT: http://analytics:3003
+      UNI_PROXY_MANAGER_INTERNAL_SECRET: ${UNI_PROXY_MANAGER_INTERNAL_SECRET}
+      UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET: ${UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET}
+    depends_on:
+      analytics:
+        condition: service_healthy
+
+  analytics:
+    build:
+      context: .
+      dockerfile: apps/analytics/Dockerfile
+    container_name: uni-proxy-manager-analytics
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_CLICKHOUSE_URL: http://clickhouse:8123
+      UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD: ${UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD}
+      UNI_PROXY_MANAGER_ANALYTICS_ENDPOINT: http://analytics:3003
+      UNI_PROXY_MANAGER_INTERNAL_SECRET: ${UNI_PROXY_MANAGER_INTERNAL_SECRET}
+      UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET: ${UNI_PROXY_MANAGER_ANALYTICS_JWT_SECRET}
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  analytics-workers:
+    build:
+      context: .
+      dockerfile: apps/analytics-workers/Dockerfile
+    container_name: uni-proxy-manager-analytics-workers
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_CLICKHOUSE_URL: http://clickhouse:8123
+      UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD: ${UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD}
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: uni-proxy-manager-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: analytics
+      CLICKHOUSE_PASSWORD: ${UNI_PROXY_MANAGER_CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    # Restrict to internal network only -- no published ports
+    # Access via analytics service only (apps/api does NOT connect directly)
+
+volumes:
+  clickhouse-data:
+  clickhouse-logs:

@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F172A"/>
+      <stop offset="100%" style="stop-color:#1E293B"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="nodeGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.4"/>
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="200" fill="url(#bgGrad)" rx="8"/>
+
+  <!-- Proxy Network Diagram -->
+  <g transform="translate(40, 50)">
+    <!-- Client nodes (left) -->
+    <g>
+      <circle cx="30" cy="20" r="12" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
+      <circle cx="30" cy="50" r="12" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
+      <circle cx="30" cy="80" r="12" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
+      <text x="30" y="24" font-family="system-ui" font-size="8" fill="#94A3B8" text-anchor="middle">C</text>
+      <text x="30" y="54" font-family="system-ui" font-size="8" fill="#94A3B8" text-anchor="middle">C</text>
+      <text x="30" y="84" font-family="system-ui" font-size="8" fill="#94A3B8" text-anchor="middle">C</text>
+    </g>
+
+    <!-- Connection lines to proxy -->
+    <line x1="42" y1="20" x2="68" y2="50" stroke="#3b82f6" stroke-width="1.5" opacity="0.5"/>
+    <line x1="42" y1="50" x2="68" y2="50" stroke="#3b82f6" stroke-width="1.5" opacity="0.5"/>
+    <line x1="42" y1="80" x2="68" y2="50" stroke="#3b82f6" stroke-width="1.5" opacity="0.5"/>
+
+    <!-- HAProxy node (center) -->
+    <g>
+      <rect x="70" y="30" width="40" height="40" rx="6" fill="#1e293b" stroke="url(#accentGrad)" stroke-width="2"/>
+      <text x="90" y="55" font-family="system-ui" font-size="10" font-weight="600" fill="#F8FBFE" text-anchor="middle">HA</text>
+    </g>
+
+    <!-- Connection lines to backends -->
+    <line x1="110" y1="50" x2="136" y2="20" stroke="#8b5cf6" stroke-width="1.5" opacity="0.5"/>
+    <line x1="110" y1="50" x2="136" y2="50" stroke="#8b5cf6" stroke-width="1.5" opacity="0.5"/>
+    <line x1="110" y1="50" x2="136" y2="80" stroke="#8b5cf6" stroke-width="1.5" opacity="0.5"/>
+
+    <!-- Backend nodes (right) -->
+    <g>
+      <rect x="138" y="8" width="24" height="24" rx="4" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5"/>
+      <rect x="138" y="38" width="24" height="24" rx="4" fill="#1e293b" stroke="#22c55e" stroke-width="1.5"/>
+      <rect x="138" y="68" width="24" height="24" rx="4" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="150" y="24" font-family="system-ui" font-size="8" fill="#94A3B8" text-anchor="middle">B1</text>
+      <text x="150" y="54" font-family="system-ui" font-size="8" fill="#22c55e" text-anchor="middle">B2</text>
+      <text x="150" y="84" font-family="system-ui" font-size="8" fill="#94A3B8" text-anchor="middle">B3</text>
+    </g>
+  </g>
+
+  <!-- Title -->
+  <text x="240" y="85" font-family="system-ui, -apple-system, sans-serif" font-size="42" font-weight="600" fill="#F8FBFE">Uni-Proxy-Manager</text>
+
+  <!-- Stats Panel -->
+  <g transform="translate(540, 110)">
+    <!-- Domains -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="70" height="50" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="35" y="22" font-family="system-ui" font-size="18" font-weight="600" fill="#F8FBFE" text-anchor="middle">12</text>
+      <text x="35" y="38" font-family="system-ui" font-size="10" fill="#64748b" text-anchor="middle">domains</text>
+    </g>
+
+    <!-- Backends -->
+    <g transform="translate(80, 0)">
+      <rect x="0" y="0" width="70" height="50" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="35" y="22" font-family="system-ui" font-size="18" font-weight="600" fill="#22c55e" text-anchor="middle">24</text>
+      <text x="35" y="38" font-family="system-ui" font-size="10" fill="#64748b" text-anchor="middle">backends</text>
+    </g>
+
+    <!-- SSL -->
+    <g transform="translate(160, 0)">
+      <rect x="0" y="0" width="70" height="50" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="35" y="22" font-family="system-ui" font-size="18" font-weight="600" fill="#3b82f6" text-anchor="middle">8</text>
+      <text x="35" y="38" font-family="system-ui" font-size="10" fill="#64748b" text-anchor="middle">SSL certs</text>
+    </g>
+  </g>
+
+  <!-- Feature badges -->
+  <g transform="translate(240, 105)">
+    <rect x="0" y="0" width="65" height="22" rx="4" fill="#1e293b" stroke="#3b82f6" stroke-width="1"/>
+    <text x="32" y="15" font-family="system-ui" font-size="9" fill="#3b82f6" text-anchor="middle">SSL Auto</text>
+
+    <rect x="75" y="0" width="80" height="22" rx="4" fill="#1e293b" stroke="#8b5cf6" stroke-width="1"/>
+    <text x="115" y="15" font-family="system-ui" font-size="9" fill="#8b5cf6" text-anchor="middle">Load Balance</text>
+
+    <rect x="165" y="0" width="75" height="22" rx="4" fill="#1e293b" stroke="#22c55e" stroke-width="1"/>
+    <text x="202" y="15" font-family="system-ui" font-size="9" fill="#22c55e" text-anchor="middle">Health Check</text>
+  </g>
+
+  <!-- Bottom accent -->
+  <rect x="0" y="196" width="800" height="4" fill="url(#accentGrad)"/>
+</svg>

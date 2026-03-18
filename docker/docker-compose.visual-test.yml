@@ -1,0 +1,273 @@
+services:
+  visual-postgres:
+    image: postgres:16-alpine
+    container_name: uni-proxy-visual-postgres
+    environment:
+      POSTGRES_USER: visual_user
+      POSTGRES_PASSWORD: visual_password
+      POSTGRES_DB: uni_proxy_visual
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visual_user -d uni_proxy_visual"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - visual-postgres-data:/var/lib/postgresql/data
+    networks:
+      - visual-network
+
+  visual-redis:
+    image: redis:7-alpine
+    container_name: uni-proxy-visual-redis
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - visual-redis-data:/data
+    networks:
+      - visual-network
+
+  visual-minio:
+    image: minio/minio:latest
+    container_name: uni-proxy-visual-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - visual-minio-data:/data
+    networks:
+      - visual-network
+
+  visual-openruntimes-executor:
+    image: unifiedprojects/urt-executor:v0.1.0-beta-5
+    container_name: uni-proxy-visual-openruntimes
+    hostname: exc1
+    restart: unless-stopped
+    stop_signal: SIGINT
+    environment:
+      OPR_EXECUTOR_IMAGE_PULL: enabled
+      OPR_EXECUTOR_ENV: development
+      OPR_EXECUTOR_RUNTIMES: node-20.0,node-18.0,node-22
+      OPR_EXECUTOR_NETWORK: uni-proxy-visual-openruntimes-network
+      OPR_EXECUTOR_SECRET: visual-test-executor-secret
+      OPR_EXECUTOR_RUNTIME_VERSIONS: v5
+      # Match Appwrite's defaults - maintenance runs hourly, not every minute
+      OPR_EXECUTOR_INACTIVE_TRESHOLD: "600"
+      OPR_EXECUTOR_MAINTENANCE_INTERVAL: "3600"
+      OPR_EXECUTOR_STORAGE_DEVICE: local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/uni-proxy-visual/builds:/storage/builds:rw
+      - /tmp/uni-proxy-visual/functions:/storage/functions:rw
+      - /tmp/uni-proxy-visual/sites:/storage/sites:rw
+      # Critical: executor creates temp dirs in /tmp that runtime containers need to access
+      - /tmp:/tmp:rw
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "authorization: Bearer visual-test-executor-secret",
+          "http://127.0.0.1/v1/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - visual-network
+      - visual-openruntimes-network
+
+  visual-api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: uni-proxy-visual-api
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: "postgresql://visual_user:visual_password@visual-postgres:5432/uni_proxy_visual?sslmode=disable"
+      UNI_PROXY_MANAGER_REDIS_URL: "redis://visual-redis:6379"
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: "/data/haproxy/haproxy.cfg"
+      UNI_PROXY_MANAGER_CERTS_DIR: "/data/certificates"
+      UNI_PROXY_MANAGER_ERROR_PAGES_DIR: "/data/error-pages"
+      UNI_PROXY_MANAGER_ACME_EMAIL: "test@example.com"
+      UNI_PROXY_MANAGER_ACME_STAGING: "true"
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: "/var/run/haproxy/haproxy.sock"
+      UNI_PROXY_MANAGER_HAPROXY_STATS_URL: "http://visual-haproxy:8404/stats"
+      NODE_ENV: "production"
+      # Sites extension configuration
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
+      SITES_EXECUTOR_ENDPOINT: "http://visual-openruntimes-executor:80"
+      SITES_EXECUTOR_SECRET: "visual-test-executor-secret"
+      SITES_S3_ENDPOINT: "http://visual-minio:9000"
+      SITES_S3_BUCKET: "sites-artifacts"
+      SITES_S3_ACCESS_KEY: "minioadmin"
+      SITES_S3_SECRET_KEY: "minioadmin"
+      SITES_S3_REGION: "us-east-1"
+      SITES_PROXY_ENDPOINT: "http://visual-api:3001"
+    volumes:
+      - ./visual-test-data/haproxy:/data/haproxy:rw
+      - ./visual-test-data/certificates:/data/certificates:rw
+      - ./visual-test-data/error-pages:/data/error-pages:rw
+      - ./visual-test-data/sites:/data/sites:rw
+      - haproxy-socket:/var/run/haproxy:ro
+    networks:
+      - visual-network
+    depends_on:
+      visual-postgres:
+        condition: service_healthy
+      visual-redis:
+        condition: service_healthy
+      visual-minio:
+        condition: service_healthy
+      visual-openruntimes-executor:
+        condition: service_healthy
+
+  visual-web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    container_name: uni-proxy-visual-web
+    environment:
+      NEXT_PUBLIC_API_URL: "http://visual-api:3001"
+      NODE_ENV: "production"
+    networks:
+      - visual-network
+    depends_on:
+      - visual-api
+
+  visual-sites-workers:
+    build:
+      context: ..
+      dockerfile: apps/sites-workers/Dockerfile
+    container_name: uni-proxy-visual-sites-workers
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
+      UNI_PROXY_MANAGER_DB_URL: "postgresql://visual_user:visual_password@visual-postgres:5432/uni_proxy_visual?sslmode=disable"
+      UNI_PROXY_MANAGER_REDIS_URL: "redis://visual-redis:6379"
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      SITES_EXECUTOR_ENDPOINT: "http://visual-openruntimes-executor:80"
+      SITES_EXECUTOR_SECRET: "visual-test-executor-secret"
+      SITES_S3_ENDPOINT: "http://visual-minio:9000"
+      SITES_S3_BUCKET: "sites-artifacts"
+      SITES_S3_ACCESS_KEY: "minioadmin"
+      SITES_S3_SECRET_KEY: "minioadmin"
+      SITES_S3_REGION: "us-east-1"
+      SITES_PROXY_ENDPOINT: "http://visual-api:3001"
+      SITES_STORAGE_DIR: /storage/functions
+      SITES_BUILDS_DIR: /storage/builds
+      SITES_USE_EXECUTOR_BUILDS: "true"
+    volumes:
+      - ./visual-test-data/sites:/data/sites:rw
+      - ./visual-test-data/haproxy:/data/haproxy:rw
+      - haproxy-socket:/var/run/haproxy:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Use bind mount with host path so executor can mount into runtime containers
+      - /tmp/uni-proxy-visual/functions:/storage/functions:rw
+      # Builds directory for executor-based builds
+      - /tmp/uni-proxy-visual/builds:/storage/builds:rw
+    networks:
+      - visual-network
+    depends_on:
+      visual-postgres:
+        condition: service_healthy
+      visual-redis:
+        condition: service_healthy
+      visual-openruntimes-executor:
+        condition: service_healthy
+      visual-api:
+        condition: service_started
+
+  visual-haproxy:
+    image: haproxy:2.9-alpine
+    container_name: uni-proxy-visual-haproxy
+    user: root
+    ports:
+      - "80:80"
+      - "8404:8404"
+    volumes:
+      - ./visual-test-data/haproxy:/usr/local/etc/haproxy:rw
+      - ./visual-test-data/certificates:/data/certificates:ro
+      - ./visual-test-data/error-pages:/data/error-pages:ro
+      - haproxy-socket:/var/run/haproxy:rw
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q --spider http://localhost:8404/stats || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - visual-network
+    depends_on:
+      visual-postgres:
+        condition: service_healthy
+      visual-redis:
+        condition: service_healthy
+      visual-api:
+        condition: service_started
+      visual-web:
+        condition: service_started
+
+  test-backend:
+    image: nginx:alpine
+    container_name: uni-proxy-visual-backend
+    volumes:
+      - ./visual-test-data/nginx:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - visual-network
+
+  # Additional test backends for load balancing testing
+  test-backend-2:
+    image: nginx:alpine
+    container_name: uni-proxy-visual-backend-2
+    volumes:
+      - ./visual-test-data/nginx:/usr/share/nginx/html:ro
+    networks:
+      - visual-network
+
+  test-backend-3:
+    image: nginx:alpine
+    container_name: uni-proxy-visual-backend-3
+    volumes:
+      - ./visual-test-data/nginx:/usr/share/nginx/html:ro
+    networks:
+      - visual-network
+
+networks:
+  visual-network:
+    name: uni-proxy-visual-network
+    driver: bridge
+  visual-openruntimes-network:
+    name: uni-proxy-visual-openruntimes-network
+    driver: bridge
+
+volumes:
+  visual-postgres-data:
+  visual-redis-data:
+  haproxy-socket:
+  visual-minio-data:

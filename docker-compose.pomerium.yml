@@ -1,0 +1,100 @@
+# Pomerium Extension for Uni-Proxy-Manager
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.pomerium.yml up -d
+#
+# This extension adds:
+# - Pomerium identity-aware access proxy
+# - Support for Google, Azure AD, GitHub, and generic OIDC identity providers
+# - Route-based access control with policy management
+# - Forward authentication for HAProxy-proxied domains
+#
+# Required environment variables:
+#   POMERIUM_AUTHENTICATE_URL - Public URL for authentication (e.g., https://auth.example.com)
+#
+# Optional environment variables:
+#   POMERIUM_LOG_LEVEL - Log level (debug, info, warn, error). Default: info
+#   POMERIUM_DEBUG - Enable debug mode. Default: false
+
+services:
+  # Pomerium All-in-One Container
+  pomerium:
+    image: pomerium/pomerium:latest
+    container_name: uni-proxy-pomerium
+    restart: unless-stopped
+    command: ["--config", "/config/config.yaml"]
+    environment:
+      # Databroker storage - not in generated config file
+      DATABROKER_STORAGE_TYPE: memory
+    volumes:
+      - pomerium_config:/config
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      # wget exits 0 for 2xx, 8 for 4xx/5xx, 4 for network failure.
+      # Accept exit codes 0 or 8 (got HTTP response) — only fail on no connection (exit 4).
+      test: ["CMD-SHELL", "wget -q --tries=1 -O /dev/null http://localhost:80/.pomerium/ping 2>&1; CODE=$?; [ $CODE -eq 0 ] || [ $CODE -eq 8 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Database migrations for Pomerium tables
+  pomerium-db-migrate:
+    build:
+      context: .
+      dockerfile: docker/pomerium-db-migrate/Dockerfile
+    container_name: uni-proxy-pomerium-migrator
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+
+  # Pomerium configuration sync worker
+  pomerium-workers:
+    build:
+      context: .
+      dockerfile: apps/pomerium-workers/Dockerfile
+    container_name: uni-proxy-pomerium-worker
+    restart: unless-stopped
+    user: "0"
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_POMERIUM_ENABLED: "true"
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      POMERIUM_CONFIG_PATH: /config/config.yaml
+      POMERIUM_INTERNAL_URL: http://pomerium:80
+      POMERIUM_CONTAINER_NAME: uni-proxy-pomerium
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+    volumes:
+      - pomerium_config:/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      pomerium-db-migrate:
+        condition: service_completed_successfully
+      pomerium:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  # Enable Pomerium extension in the API
+  api:
+    environment:
+      UNI_PROXY_MANAGER_POMERIUM_ENABLED: "true"
+      POMERIUM_INTERNAL_URL: http://pomerium:80
+      POMERIUM_AUTHENTICATE_URL: ${POMERIUM_AUTHENTICATE_URL:-}
+    depends_on:
+      pomerium-db-migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pomerium_config:

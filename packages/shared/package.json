@@ -1,0 +1,95 @@
+{
+    "name": "@uni-proxy-manager/shared",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
+        },
+        "./config": {
+            "types": "./src/config/index.ts",
+            "default": "./src/config/index.ts"
+        },
+        "./config/*": {
+            "types": "./src/config/*.ts",
+            "default": "./src/config/*.ts"
+        },
+        "./redis": {
+            "types": "./src/redis/index.ts",
+            "default": "./src/redis/index.ts"
+        },
+        "./redis/*": {
+            "types": "./src/redis/*.ts",
+            "default": "./src/redis/*.ts"
+        },
+        "./haproxy": {
+            "types": "./src/haproxy/index.ts",
+            "default": "./src/haproxy/index.ts"
+        },
+        "./haproxy/*": {
+            "types": "./src/haproxy/*.ts",
+            "default": "./src/haproxy/*.ts"
+        },
+        "./domain-status": {
+            "types": "./src/domain-status/index.ts",
+            "default": "./src/domain-status/index.ts"
+        },
+        "./s3": {
+            "types": "./src/s3/index.ts",
+            "default": "./src/s3/index.ts"
+        },
+        "./s3/*": {
+            "types": "./src/s3/*.ts",
+            "default": "./src/s3/*.ts"
+        },
+        "./github": {
+            "types": "./src/github/index.ts",
+            "default": "./src/github/index.ts"
+        },
+        "./github/*": {
+            "types": "./src/github/*.ts",
+            "default": "./src/github/*.ts"
+        },
+        "./openruntimes": {
+            "types": "./src/openruntimes/index.ts",
+            "default": "./src/openruntimes/index.ts"
+        },
+        "./openruntimes/*": {
+            "types": "./src/openruntimes/*.ts",
+            "default": "./src/openruntimes/*.ts"
+        },
+        "./builders": {
+            "types": "./src/builders/index.ts",
+            "default": "./src/builders/index.ts"
+        },
+        "./builders/*": {
+            "types": "./src/builders/*.ts",
+            "default": "./src/builders/*.ts"
+        },
+        "./utils/*": {
+            "types": "./src/utils/*.ts",
+            "default": "./src/utils/*.ts"
+        }
+    },
+    "scripts": {
+        "type-check": "tsc --noEmit",
+        "test": "vitest run --config ../../vitest.config.ts"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.1009.0",
+        "@aws-sdk/s3-request-presigner": "^3.1009.0",
+        "@octokit/app": "^15.1.6",
+        "@octokit/rest": "^21.1.1",
+        "@octokit/webhooks": "^14.2.0",
+        "ioredis": "5.10.0",
+        "jsonwebtoken": "^9.0.3",
+        "zod": "^3.25.76"
+    },
+    "devDependencies": {
+        "@types/jsonwebtoken": "^9.0.10",
+        "@types/node": "^25.4.0",
+        "typescript": "^5.9.3"
+    }
+}

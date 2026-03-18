@@ -1,0 +1,210 @@
+# Sites Extension for Uni-Proxy-Manager
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.sites.yml up -d
+#
+# This extension adds:
+# - Site deployment and hosting capabilities
+# - OpenRuntimes executor for serverless functions
+# - Build/deploy workers for CI/CD
+# - GitHub App integration for auto-deployments
+#
+# Required environment variables:
+#   SITES_EXECUTOR_SECRET - Secret for OpenRuntimes executor auth
+#   SITES_S3_ENDPOINT - S3-compatible storage endpoint (optional, defaults to local)
+#   SITES_S3_BUCKET - S3 bucket name (optional)
+#   SITES_S3_REGION - S3 region (optional, defaults to us-east-1)
+#   SITES_S3_ACCESS_KEY - S3 access key (optional)
+#   SITES_S3_SECRET_KEY - S3 secret key (optional)
+#   UNI_PROXY_MANAGER_GITHUB_APP_ID - GitHub App ID (optional)
+#   UNI_PROXY_MANAGER_GITHUB_APP_PRIVATE_KEY - GitHub App private key (optional)
+#   UNI_PROXY_MANAGER_GITHUB_WEBHOOK_SECRET - GitHub webhook secret (optional)
+
+services:
+  # High-performance Rust proxy for site routing (lookup + streaming proxy to executor)
+  sites-lookup:
+    build:
+      context: .
+      dockerfile: apps/sites-lookup/Dockerfile
+    container_name: uni-proxy-sites-router
+    restart: unless-stopped
+    environment:
+      # Database connection (set sslmode=require in production with proper SSL setup)
+      DATABASE_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      # Redis connection (set UNI_PROXY_MANAGER_REDIS_URL in .env for password auth)
+      REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      SITES_CACHE_TTL: ${SITES_CACHE_TTL:-60}
+      SITES_EXECUTOR_ENDPOINT: http://openruntimes-executor:80
+      # SECURITY: Required for executor communication
+      SITES_EXECUTOR_SECRET: ${SITES_EXECUTOR_SECRET}
+      # SECURITY: Optional authentication for /invalidate endpoint (uses API key if not set separately)
+      SITES_INVALIDATE_SECRET: ${SITES_INVALIDATE_SECRET:-${UNI_PROXY_MANAGER_API_KEY:-}}
+      PORT: 3002
+      RUST_LOG: sites_lookup=info
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-t",
+          "1",
+          "-O",
+          "/dev/null",
+          "http://localhost:3002/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      openruntimes-executor:
+        condition: service_healthy
+
+  # Run Sites-specific database migrations
+  sites-db-migrate:
+    build:
+      context: .
+      dockerfile: docker/sites-db-migrate/Dockerfile
+    container_name: uni-proxy-sites-migrator
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+
+  # Enable Sites extension in the API
+  api:
+    environment:
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
+      SITES_EXECUTOR_ENDPOINT: http://openruntimes-executor:80
+      SITES_EXECUTOR_SECRET: ${SITES_EXECUTOR_SECRET}
+      SITES_S3_ENDPOINT: ${SITES_S3_ENDPOINT:-}
+      SITES_S3_BUCKET: ${SITES_S3_BUCKET:-}
+      SITES_S3_REGION: ${SITES_S3_REGION:-us-east-1}
+      SITES_S3_ACCESS_KEY: ${SITES_S3_ACCESS_KEY:-}
+      SITES_S3_SECRET_KEY: ${SITES_S3_SECRET_KEY:-}
+      UNI_PROXY_MANAGER_GITHUB_APP_ID: ${UNI_PROXY_MANAGER_GITHUB_APP_ID:-}
+      UNI_PROXY_MANAGER_GITHUB_APP_PRIVATE_KEY: ${UNI_PROXY_MANAGER_GITHUB_APP_PRIVATE_KEY:-}
+      UNI_PROXY_MANAGER_GITHUB_APP_SLUG: ${UNI_PROXY_MANAGER_GITHUB_APP_SLUG:-uni-proxy-manager}
+      UNI_PROXY_MANAGER_GITHUB_WEBHOOK_SECRET: ${UNI_PROXY_MANAGER_GITHUB_WEBHOOK_SECRET:-}
+    volumes:
+      - ${SITES_DATA_PATH:-./data/sites}:/data/sites
+    depends_on:
+      sites-db-migrate:
+        condition: service_completed_successfully
+
+  # Sites-specific background workers
+  sites-workers:
+    build:
+      context: .
+      dockerfile: apps/sites-workers/Dockerfile
+    container_name: uni-proxy-sites-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_SITES_ENABLED: "true"
+      # Database connection (set sslmode=require in production with proper SSL setup)
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      # Redis connection (set UNI_PROXY_MANAGER_REDIS_URL in .env for password auth)
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      SITES_EXECUTOR_ENDPOINT: http://openruntimes-executor:80
+      SITES_EXECUTOR_SECRET: ${SITES_EXECUTOR_SECRET}
+      SITES_S3_ENDPOINT: ${SITES_S3_ENDPOINT:-}
+      SITES_S3_BUCKET: ${SITES_S3_BUCKET:-}
+      SITES_S3_REGION: ${SITES_S3_REGION:-us-east-1}
+      SITES_S3_ACCESS_KEY: ${SITES_S3_ACCESS_KEY:-}
+      SITES_S3_SECRET_KEY: ${SITES_S3_SECRET_KEY:-}
+      SITES_PROXY_ENDPOINT: ${SITES_PROXY_ENDPOINT:-http://api:3001}
+      SITES_STORAGE_DIR: /storage/functions
+      SITES_BUILDS_DIR: /storage/builds
+      SITES_USE_EXECUTOR_BUILDS: ${SITES_USE_EXECUTOR_BUILDS:-true}
+      UNI_PROXY_MANAGER_GITHUB_APP_ID: ${UNI_PROXY_MANAGER_GITHUB_APP_ID:-}
+      UNI_PROXY_MANAGER_GITHUB_APP_PRIVATE_KEY: ${UNI_PROXY_MANAGER_GITHUB_APP_PRIVATE_KEY:-}
+      UNI_PROXY_MANAGER_GITHUB_WEBHOOK_SECRET: ${UNI_PROXY_MANAGER_GITHUB_WEBHOOK_SECRET:-}
+    volumes:
+      - ${SITES_DATA_PATH:-./data/sites}:/data/sites
+      - ${HAPROXY_DATA_PATH:-./data/haproxy}:/data/haproxy
+      - haproxy_socket:/var/run/haproxy
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Use bind mount with host path so executor can mount into runtime containers
+      - ${OPENRUNTIMES_FUNCTIONS_PATH:-/var/lib/uni-proxy-manager/functions}:/storage/functions
+      # Builds directory for executor-based builds (shared with executor)
+      - ${OPENRUNTIMES_BUILDS_PATH:-/var/lib/uni-proxy-manager/builds}:/storage/builds
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      sites-db-migrate:
+        condition: service_completed_successfully
+      openruntimes-executor:
+        condition: service_started
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # OpenRuntimes Executor for serverless function execution
+  openruntimes-executor:
+    image: unifiedprojects/urt-executor:v0.1.0-beta-5
+    container_name: uni-proxy-openruntimes-executor
+    hostname: exc1
+    restart: unless-stopped
+    stop_signal: SIGINT
+    # No ports exposed - HAProxy routes internally via sites-lookup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${OPENRUNTIMES_BUILDS_PATH:-/var/lib/uni-proxy-manager/builds}:/storage/builds:rw
+      - ${OPENRUNTIMES_FUNCTIONS_PATH:-/var/lib/uni-proxy-manager/functions}:/storage/functions:rw
+      - ${OPENRUNTIMES_SITES_PATH:-/var/lib/uni-proxy-manager/sites}:/storage/sites:rw
+      # Critical: executor creates temp dirs in /tmp that runtime containers need to access
+      - /tmp:/tmp:rw
+    networks:
+      - uni-proxy-manager
+      - openruntimes-runtimes
+    environment:
+      - URT_IMAGE_PULL=enabled
+      - URT_ENV=${OPR_EXECUTOR_ENV:-production}
+      - URT_RUNTIMES=${OPR_EXECUTOR_RUNTIMES:-node-20.0,node-18.0,node-22,python-3.11,deno-1.40}
+      - URT_NETWORK=openruntimes-runtimes
+      - URT_SECRET=${SITES_EXECUTOR_SECRET}
+      - URT_RUNTIME_VERSIONS=v5
+      - URT_KEEP_ALIVE=false
+      - URT_INACTIVE_THRESHOLD=${URT_INACTIVE_THRESHOLD:-600}
+      - URT_MAINTENANCE_INTERVAL=${URT_MAINTENANCE_INTERVAL:-3600}
+      - URT_DOCKER_HUB_USERNAME=${DOCKER_HUB_USERNAME:-}
+      - URT_DOCKER_HUB_PASSWORD=${DOCKER_HUB_PASSWORD:-}
+      - URT_STORAGE_DEVICE=${SITES_S3_BUCKET:+s3}
+      - URT_STORAGE_S3_ENDPOINT=${SITES_S3_ENDPOINT:-}
+      - URT_STORAGE_S3_BUCKET=${SITES_S3_BUCKET:-}
+      - URT_STORAGE_S3_REGION=${SITES_S3_REGION:-us-east-1}
+      - URT_STORAGE_S3_ACCESS_KEY=${SITES_S3_ACCESS_KEY:-}
+      - URT_STORAGE_S3_SECRET=${SITES_S3_SECRET_KEY:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-H",
+          "authorization: Bearer ${SITES_EXECUTOR_SECRET}",
+          "http://127.0.0.1/v1/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+networks:
+  openruntimes-runtimes:
+    name: openruntimes-runtimes
+    driver: bridge

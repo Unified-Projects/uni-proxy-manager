@@ -1,0 +1,47 @@
+[package]
+name = "sites-lookup"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance lookup service for HAProxy site routing"
+authors = ["Uni-Proxy-Manager"]
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["http2"] }
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["timeout"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+
+# HTTP client for proxying
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "http2", "tokio"] }
+http-body-util = "0.1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "json", "rust_decimal"] }
+rust_decimal = "1"
+
+# Redis
+redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Utils
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

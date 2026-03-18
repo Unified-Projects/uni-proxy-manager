@@ -1,0 +1,304 @@
+name: Test Suite
+
+on:
+    push:
+        branches: [main, develop]
+        paths-ignore:
+            - "**/*.md"
+            - "docs/**"
+            - "LICENSE*"
+            - ".vscode/**"
+            - ".editorconfig"
+    pull_request:
+        paths-ignore:
+            - "**/*.md"
+            - "docs/**"
+            - "LICENSE*"
+            - ".vscode/**"
+            - ".editorconfig"
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    lint-and-typecheck:
+        name: Lint & Type Check
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+
+            - name: Install Bun
+              uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe0 # v2
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Lint
+              run: pnpm lint
+
+            - name: Type check
+              run: pnpm type-check
+
+    unit-tests:
+        name: Unit Tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        needs: lint-and-typecheck
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+
+            - name: Install Bun
+              uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe0 # v2
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Run unit tests
+              run: pnpm test
+
+    integration-tests:
+        name: Integration Tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        needs: unit-tests
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+
+            - name: Install Bun
+              uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe0 # v2
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Prepare integration test fixtures
+              run: |
+                  mkdir -p docker/test-data/analytics-website
+                  cat > docker/test-data/analytics-website/index.html <<'EOF'
+                  <!DOCTYPE html>
+                  <html lang="en">
+                  <head>
+                    <meta charset="UTF-8">
+                    <title>Test Website Home</title>
+                    <script src="script.js"></script>
+                  </head>
+                  <body>
+                    <h1>Test Website Home</h1>
+                    <p>This page is used for integration testing of the analytics pipeline.</p>
+                  </body>
+                  </html>
+                  EOF
+                  cat > docker/test-data/analytics-website/about.html <<'EOF'
+                  <!DOCTYPE html>
+                  <html lang="en">
+                  <head>
+                    <meta charset="UTF-8">
+                    <title>Test Website About</title>
+                  </head>
+                  <body>
+                    <h1>Test Website About</h1>
+                    <p>About page for analytics integration testing.</p>
+                  </body>
+                  </html>
+                  EOF
+                  cat > docker/test-data/analytics-website/noscript.html <<'EOF'
+                  <!DOCTYPE html>
+                  <html lang="en">
+                  <head>
+                    <meta charset="UTF-8">
+                    <title>Test Website Noscript</title>
+                  </head>
+                  <body>
+                    <h1>Test Website Noscript</h1>
+                    <noscript><img src="pixel.gif" width="1" height="1" alt="" /></noscript>
+                  </body>
+                  </html>
+                  EOF
+
+            - name: Start Docker test environment
+              run: |
+                  pnpm test:docker:down 2>/dev/null || true
+                  pnpm test:docker:up
+
+            - name: Run integration suite (equivalent to run-tests.sh --all integration path)
+              run: docker exec -e SKIP_URT_TESTS=true uni-proxy-manager-test-runner pnpm exec vitest run --config vitest.config.integration.ts
+
+            - name: Cleanup
+              if: always()
+              run: docker compose -f docker/docker-compose.test.yml down -v --remove-orphans
+
+            - name: Upload test results
+              if: always()
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: integration-test-results
+                  path: |
+                      test-results/
+                      coverage/
+                  retention-days: 7
+
+    e2e-tests:
+        name: E2E Tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        needs: integration-tests
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+
+            - name: Install Bun
+              uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe0 # v2
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Cache Playwright browsers
+              uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+              with:
+                  path: |
+                      ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+                  restore-keys: |
+                      playwright-${{ runner.os }}-
+
+            - name: Install Playwright browsers
+              run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+            - name: Run E2E tests
+              run: pnpm test:e2e
+
+            - name: Upload Playwright report
+              if: always()
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: playwright-report
+                  path: playwright-report/
+                  retention-days: 7
+
+            - name: Upload test screenshots
+              if: failure()
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: e2e-screenshots
+                  path: test-results/
+                  retention-days: 7
+
+    e2e-real-tests:
+        name: Real E2E Tests (with URT-Executor)
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        needs: integration-tests
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+
+            - name: Install Bun
+              uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe0 # v2
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Create storage directories
+              run: |
+                  sudo mkdir -p /tmp/uni-proxy-e2e/functions
+                  sudo mkdir -p /tmp/uni-proxy-e2e/builds
+                  sudo mkdir -p /tmp/uni-proxy-e2e/sites
+                  sudo chmod -R 777 /tmp/uni-proxy-e2e
+
+            - name: Create E2E test data directories
+              run: |
+                  mkdir -p tests/e2e-real/setup/e2e-test-data/haproxy
+                  mkdir -p tests/e2e-real/setup/e2e-test-data/certificates
+                  mkdir -p tests/e2e-real/setup/e2e-test-data/error-pages
+                  mkdir -p tests/e2e-real/setup/e2e-test-data/sites
+                  # Create minimal HAProxy config
+                  echo "global" > tests/e2e-real/setup/e2e-test-data/haproxy/haproxy.cfg
+                  echo "  log stdout format raw local0" >> tests/e2e-real/setup/e2e-test-data/haproxy/haproxy.cfg
+                  echo "defaults" >> tests/e2e-real/setup/e2e-test-data/haproxy/haproxy.cfg
+                  echo "  mode http" >> tests/e2e-real/setup/e2e-test-data/haproxy/haproxy.cfg
+
+            - name: Start E2E environment
+              run: docker compose -f tests/e2e-real/setup/docker-compose.e2e.yml up -d --build
+
+            - name: Wait for services
+              run: |
+                  echo "Waiting for services to be ready..."
+                  timeout 120 bash -c 'until curl -sf http://127.0.0.1:3099/health; do sleep 2; done'
+                  timeout 120 bash -c 'until curl -sf -H "authorization: Bearer e2e-test-executor-secret" http://127.0.0.1:8080/v1/health; do sleep 2; done'
+                  echo "Services are ready!"
+
+            - name: Run real E2E tests
+              run: pnpm test:e2e-real
+              env:
+                  E2E_API_URL: http://127.0.0.1:3099
+                  E2E_EXECUTOR_URL: http://127.0.0.1:8080
+                  E2E_EXECUTOR_SECRET: e2e-test-executor-secret
+
+            - name: Collect logs on failure
+              if: failure()
+              run: |
+                  docker compose -f tests/e2e-real/setup/docker-compose.e2e.yml logs > e2e-real-logs.txt 2>&1
+
+            - name: Upload logs on failure
+              if: failure()
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: e2e-real-logs
+                  path: e2e-real-logs.txt
+                  retention-days: 7
+
+            - name: Cleanup
+              if: always()
+              run: |
+                  docker compose -f tests/e2e-real/setup/docker-compose.e2e.yml down -v --remove-orphans
+                  sudo rm -rf /tmp/uni-proxy-e2e

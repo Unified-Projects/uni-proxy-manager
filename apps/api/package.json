@@ -1,0 +1,40 @@
+{
+  "name": "@uni-proxy-manager/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "tsc && node scripts/copy-non-ts-files.js",
+    "build:bun": "bun build src/index.ts --outdir dist --target bun",
+    "start": "node dist/index.js",
+    "start:bun": "bun run dist/index.js",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "^1.2.0",
+    "@hono/zod-validator": "^0.7.6",
+    "@types/tar": "^6.1.13",
+    "@uni-proxy-manager/database": "workspace:*",
+    "@uni-proxy-manager/queue": "workspace:*",
+    "@uni-proxy-manager/shared": "workspace:*",
+    "adm-zip": "^0.5.16",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.71.0",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.12.8",
+    "ioredis": "5.10.0",
+    "jose": "^5.10.0",
+    "nanoid": "^5.1.7",
+    "playwright": "^1.58.2",
+    "tar": "^7.5.11",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^25.4.0",
+    "typescript": "^5.9.3"
+  }
+}

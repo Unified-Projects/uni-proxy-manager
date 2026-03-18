@@ -1,0 +1,304 @@
+# Uni-Proxy-Manager - Build from Source
+# Builds images locally instead of pulling from registry
+#
+# Usage:
+#   1. Copy .env.example to .env and configure
+#   2. Run from the project root directory:
+#      docker compose -f deployments/docker-compose.build.yml up -d --build
+#
+# Note: This file should be run from the project root, not the deployments directory
+
+services:
+  # ===========================================
+  # HAProxy - Main Reverse Proxy
+  # ===========================================
+  haproxy:
+    image: haproxy:2.9-alpine
+    container_name: uni-proxy-manager-haproxy
+    restart: unless-stopped
+    user: "0"
+    ports:
+      - "${HAPROXY_HTTP_PORT:-80}:80"
+      - "${HAPROXY_HTTPS_PORT:-443}:443"
+      - "${HAPROXY_STATS_PORT:-8404}:8404"
+    volumes:
+      - ./deployments/data/haproxy:/usr/local/etc/haproxy:ro
+      - ./deployments/data/certificates:/data/certificates:ro
+      - ./deployments/data/error-pages:/data/error-pages:ro
+      - haproxy_socket:/var/run/haproxy
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # PostgreSQL - Primary Database
+  # ===========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: uni-proxy-manager-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uni_proxy_manager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-uni_proxy_manager}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uni_proxy_manager} -d ${POSTGRES_DB:-uni_proxy_manager}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Redis - Cache & Queue
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    container_name: uni-proxy-manager-redis
+    restart: unless-stopped
+    # Add --requirepass for authentication (set UNI_PROXY_MANAGER_REDIS_PASSWORD in .env)
+    command: >
+      sh -c '
+        if [ -n "$${REDIS_PASSWORD}" ]; then
+          redis-server --appendonly yes --maxmemory $${REDIS_MAXMEMORY:-256mb} --maxmemory-policy noeviction --requirepass "$${REDIS_PASSWORD}"
+        else
+          redis-server --appendonly yes --maxmemory $${REDIS_MAXMEMORY:-256mb} --maxmemory-policy noeviction
+        fi
+      '
+    environment:
+      REDIS_PASSWORD: ${UNI_PROXY_MANAGER_REDIS_PASSWORD:-}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-256mb}
+    volumes:
+      - redis_data:/data
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ${UNI_PROXY_MANAGER_REDIS_PASSWORD:+-a $UNI_PROXY_MANAGER_REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Database Migrations
+  # ===========================================
+  db-migrate:
+    build:
+      context: .
+      dockerfile: docker/db-migrate/Dockerfile
+    container_name: uni-proxy-manager-db-migrate
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: postgres://${POSTGRES_USER:-uni_proxy_manager}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-uni_proxy_manager}?sslmode=disable
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ===========================================
+  # API Server
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: uni-proxy-manager-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_URL: ${UNI_PROXY_MANAGER_URL:-http://localhost:3000}
+      UNI_PROXY_MANAGER_DB_URL: postgres://${POSTGRES_USER:-uni_proxy_manager}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-uni_proxy_manager}?sslmode=disable
+      # Redis connection (set UNI_PROXY_MANAGER_REDIS_URL in .env for password auth, e.g., redis://:password@redis:6379)
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      UNI_PROXY_MANAGER_CERTIFICATES_PATH: /data/certificates
+      UNI_PROXY_MANAGER_ERROR_PAGES_PATH: /data/error-pages
+      UNI_PROXY_MANAGER_ACME_EMAIL: ${ACME_EMAIL:-}
+      UNI_PROXY_MANAGER_ACME_STAGING: ${ACME_STAGING:-false}
+      # Security settings
+      UNI_PROXY_MANAGER_API_KEY: ${UNI_PROXY_MANAGER_API_KEY:-}
+      UNI_PROXY_MANAGER_AUTH_ENABLED: ${UNI_PROXY_MANAGER_AUTH_ENABLED:-true}
+      UNI_PROXY_MANAGER_STATS_USER: ${UNI_PROXY_MANAGER_STATS_USER:-admin}
+      UNI_PROXY_MANAGER_STATS_PASSWORD: ${UNI_PROXY_MANAGER_STATS_PASSWORD:-}
+    volumes:
+      - ./deployments/data/haproxy:/data/haproxy
+      - ./deployments/data/certificates:/data/certificates
+      - ./deployments/data/error-pages:/data/error-pages
+      - haproxy_socket:/var/run/haproxy
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Background Workers
+  # ===========================================
+  workers:
+    build:
+      context: .
+      dockerfile: apps/workers/Dockerfile
+    container_name: uni-proxy-manager-workers
+    restart: unless-stopped
+    user: "0"
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_DB_URL: postgres://${POSTGRES_USER:-uni_proxy_manager}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-uni_proxy_manager}?sslmode=disable
+      # Redis connection (set UNI_PROXY_MANAGER_REDIS_URL in .env for password auth)
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      UNI_PROXY_MANAGER_CERTIFICATES_PATH: /data/certificates
+      UNI_PROXY_MANAGER_ERROR_PAGES_PATH: /data/error-pages
+      UNI_PROXY_MANAGER_ACME_EMAIL: ${ACME_EMAIL:-}
+      UNI_PROXY_MANAGER_ACME_STAGING: ${ACME_STAGING:-false}
+      # DNS Provider: Cloudflare
+      UNI_PROXY_MANAGER_CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      # DNS Provider: Namecheap
+      UNI_PROXY_MANAGER_NAMECHEAP_API_USER: ${NAMECHEAP_API_USER:-}
+      UNI_PROXY_MANAGER_NAMECHEAP_API_KEY: ${NAMECHEAP_API_KEY:-}
+      UNI_PROXY_MANAGER_NAMECHEAP_CLIENT_IP: ${NAMECHEAP_CLIENT_IP:-}
+      # Docker socket for HAProxy reload
+      HAPROXY_CONTAINER_NAME: uni-proxy-manager-haproxy
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      # Security settings for HAProxy stats
+      UNI_PROXY_MANAGER_STATS_USER: ${UNI_PROXY_MANAGER_STATS_USER:-admin}
+      UNI_PROXY_MANAGER_STATS_PASSWORD: ${UNI_PROXY_MANAGER_STATS_PASSWORD:-}
+    volumes:
+      - ./deployments/data/haproxy:/data/haproxy
+      - ./deployments/data/certificates:/data/certificates
+      - ./deployments/data/error-pages:/data/error-pages
+      - haproxy_socket:/var/run/haproxy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Web Frontend
+  # ===========================================
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: uni-proxy-manager-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Dashboard Proxy (routes to web + api)
+  # ===========================================
+  dashboard-proxy:
+    image: haproxy:2.9-alpine
+    container_name: uni-proxy-manager-dashboard-proxy
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
+    volumes:
+      - ./deployments/haproxy-dashboard.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  uni-proxy-manager:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ===========================================
+# Volumes - Persistent Storage
+# ===========================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  haproxy_socket:
+    driver: local
+  # Sites extension volumes (used when combined with docker-compose.sites.yml)
+  openruntimes-builds:
+    driver: local
+  openruntimes-functions:
+    driver: local

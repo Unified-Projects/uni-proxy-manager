@@ -1,0 +1,28 @@
+{
+  "name": "@uni-proxy-manager/workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun --external cpu-features --external @uni-proxy-manager/shared --external @uni-proxy-manager/database --external @uni-proxy-manager/queue",
+    "start": "bun run dist/index.js",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@uni-proxy-manager/database": "workspace:*",
+    "@uni-proxy-manager/queue": "workspace:*",
+    "@uni-proxy-manager/shared": "workspace:*",
+    "acme-client": "^5.4.0",
+    "bullmq": "^5.71.0",
+    "dockerode": "^4.0.2",
+    "drizzle-orm": "^0.45.1",
+    "ioredis": "5.10.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^4.0.1",
+    "@types/node": "^25.4.0",
+    "typescript": "^5.9.3"
+  }
+}

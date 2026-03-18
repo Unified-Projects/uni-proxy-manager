@@ -1,0 +1,216 @@
+services:
+  haproxy:
+    image: haproxy:2.9-alpine
+    container_name: uni-proxy-manager-haproxy
+    restart: unless-stopped
+    cap_add:
+      - NET_BIND_SERVICE
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8404:8404" # Stats page
+    volumes:
+      - ./data/haproxy:/usr/local/etc/haproxy:ro
+      - ./data/certificates:/data/certificates:ro
+      - ./data/error-pages:/data/error-pages:ro
+      - haproxy_socket:/var/run/haproxy
+      - haproxy_logs:/var/log/haproxy
+    networks:
+      - uni-proxy-manager
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8404/stats || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      api:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: uni-proxy-manager-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}
+      POSTGRES_PASSWORD: ${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager} -d ${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: uni-proxy-manager-redis
+    restart: unless-stopped
+    # Add --requirepass for authentication (set UNI_PROXY_MANAGER_REDIS_PASSWORD in .env)
+    command: >
+      sh -c '
+        if [ -n "$${REDIS_PASSWORD}" ]; then
+          redis-server --appendonly yes --maxmemory-policy noeviction --requirepass "$${REDIS_PASSWORD}"
+        else
+          redis-server --appendonly yes --maxmemory-policy noeviction
+        fi
+      '
+    environment:
+      REDIS_PASSWORD: ${UNI_PROXY_MANAGER_REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ${UNI_PROXY_MANAGER_REDIS_PASSWORD:+-a $UNI_PROXY_MANAGER_REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-migrate:
+    build:
+      context: .
+      dockerfile: docker/db-migrate/Dockerfile
+    container_name: uni-proxy-migrator
+    environment:
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: uni-proxy-controller
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      UNI_PROXY_MANAGER_URL: ${UNI_PROXY_MANAGER_URL:-http://localhost:3000}
+      # Database connection (set sslmode=require in production with proper SSL setup)
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      # Redis connection (set UNI_PROXY_MANAGER_REDIS_URL in .env for password auth, e.g., redis://:password@redis:6379)
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      UNI_PROXY_MANAGER_HAPROXY_STATS_URL: http://haproxy:8404/stats
+      UNI_PROXY_MANAGER_CERTIFICATES_PATH: /data/certificates
+      UNI_PROXY_MANAGER_ERROR_PAGES_PATH: /data/error-pages
+      UNI_PROXY_MANAGER_ACME_EMAIL: ${UNI_PROXY_MANAGER_ACME_EMAIL}
+      # Security settings
+      UNI_PROXY_MANAGER_API_KEY: ${UNI_PROXY_MANAGER_API_KEY:-}
+      UNI_PROXY_MANAGER_AUTH_ENABLED: ${UNI_PROXY_MANAGER_AUTH_ENABLED:-true}
+      UNI_PROXY_MANAGER_STATS_USER: ${UNI_PROXY_MANAGER_STATS_USER:-admin}
+      UNI_PROXY_MANAGER_STATS_PASSWORD: ${UNI_PROXY_MANAGER_STATS_PASSWORD:-}
+    volumes:
+      - ./data/haproxy:/data/haproxy
+      - ./data/certificates:/data/certificates
+      - ./data/error-pages:/data/error-pages
+      - haproxy_socket:/var/run/haproxy
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  workers:
+    build:
+      context: .
+      dockerfile: apps/workers/Dockerfile
+    container_name: uni-proxy-worker
+    restart: unless-stopped
+    user: "1001:1001"
+    group_add:
+      - docker
+    environment:
+      NODE_ENV: production
+      # Database connection (set sslmode=require in production with proper SSL setup)
+      UNI_PROXY_MANAGER_DB_URL: postgres://${UNI_PROXY_MANAGER_DB_USER:-uni_proxy_manager}:${UNI_PROXY_MANAGER_DB_PASSWORD:-changeme}@postgres:5432/${UNI_PROXY_MANAGER_DB_NAME:-uni_proxy_manager}?sslmode=disable
+      # Redis connection (set UNI_PROXY_MANAGER_REDIS_URL in .env for password auth)
+      UNI_PROXY_MANAGER_REDIS_URL: ${UNI_PROXY_MANAGER_REDIS_URL:-redis://redis:6379}
+      UNI_PROXY_MANAGER_HAPROXY_SOCKET: /var/run/haproxy/haproxy.sock
+      UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: /data/haproxy/haproxy.cfg
+      UNI_PROXY_MANAGER_HAPROXY_STATS_URL: http://haproxy:8404/stats
+      UNI_PROXY_MANAGER_CERTIFICATES_PATH: /data/certificates
+      UNI_PROXY_MANAGER_ERROR_PAGES_PATH: /data/error-pages
+      UNI_PROXY_MANAGER_ACME_EMAIL: ${UNI_PROXY_MANAGER_ACME_EMAIL}
+      HAPROXY_CONTAINER_NAME: uni-proxy-manager-haproxy
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      # Security settings for HAProxy stats
+      UNI_PROXY_MANAGER_STATS_USER: ${UNI_PROXY_MANAGER_STATS_USER:-admin}
+      UNI_PROXY_MANAGER_STATS_PASSWORD: ${UNI_PROXY_MANAGER_STATS_PASSWORD:-}
+    volumes:
+      - ./data/haproxy:/data/haproxy
+      - ./data/certificates:/data/certificates
+      - ./data/error-pages:/data/error-pages
+      - haproxy_socket:/var/run/haproxy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: uni-proxy-console
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks:
+      - uni-proxy-manager
+    depends_on:
+      api:
+        condition: service_healthy
+
+  dashboard-proxy:
+    image: haproxy:2.9-alpine
+    container_name: uni-proxy-manager-dashboard-proxy
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - ./docker/haproxy-dashboard.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - uni-proxy-manager
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+
+networks:
+  uni-proxy-manager:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  haproxy_socket:
+  haproxy_logs:

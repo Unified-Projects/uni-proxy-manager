@@ -1,0 +1,54 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env"],
+  "globalEnv": [
+    "UNI_PROXY_MANAGER_URL",
+    "UNI_PROXY_MANAGER_DB_URL",
+    "UNI_PROXY_MANAGER_REDIS_URL",
+    "UNI_PROXY_MANAGER_API_PORT",
+    "UNI_PROXY_MANAGER_HAPROXY_SOCKET",
+    "UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH",
+    "UNI_PROXY_MANAGER_CERTS_DIR",
+    "UNI_PROXY_MANAGER_ERROR_PAGES_DIR",
+    "UNI_PROXY_MANAGER_ACME_EMAIL",
+    "UNI_PROXY_MANAGER_ACME_STAGING",
+    "DATABASE_URL",
+    "REDIS_URL"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "type-check": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    },
+    "db:generate": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:push": {
+      "cache": false
+    }
+  }
+}
