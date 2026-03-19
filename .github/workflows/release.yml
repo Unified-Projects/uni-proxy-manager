@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag (e.g., v1.0.0)"
+        description: "Version (e.g., 0.1.0)"
         required: true
         type: string
       create_release:
@@ -34,6 +34,7 @@ jobs:
     outputs:
       is_release: ${{ steps.check.outputs.is_release }}
       version: ${{ steps.check.outputs.version }}
+      release_tag: ${{ steps.check.outputs.release_tag }}
     steps:
       - name: Determine version
         id: check
@@ -45,27 +46,39 @@ jobs:
           if [[ -n "$RELEASE_TAG" ]]; then
             # Triggered by GitHub Release
             VERSION="${RELEASE_TAG#v}"
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+              echo "Invalid release tag: $RELEASE_TAG" >&2
+              exit 1
+            fi
             echo "is_release=false" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "release_tag=v$VERSION" >> "$GITHUB_OUTPUT"
             echo "Release publish detected: $RELEASE_TAG"
           elif [[ -n "$MANUAL_VERSION" ]]; then
             # Manual workflow dispatch
             VERSION="${MANUAL_VERSION#v}"
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+              echo "Invalid manual version: $MANUAL_VERSION" >&2
+              exit 1
+            fi
             if [[ "${{ inputs.create_release }}" == "true" ]]; then
               echo "is_release=true" >> "$GITHUB_OUTPUT"
             else
               echo "is_release=false" >> "$GITHUB_OUTPUT"
             fi
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "release_tag=v$VERSION" >> "$GITHUB_OUTPUT"
             echo "Manual build with version: $VERSION"
           elif [[ "$COMMIT_MSG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+.*)$ ]]; then
             # Commit message matches version pattern
             echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
             echo "Release detected from commit: v${BASH_REMATCH[1]}"
           else
             echo "is_release=false" >> "$GITHUB_OUTPUT"
             echo "version=" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
             echo "Not a release commit: $COMMIT_MSG"
           fi
 
@@ -146,8 +159,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2
         with:
-          tag_name: v${{ needs.check-version.outputs.version }}
-          name: v${{ needs.check-version.outputs.version }}
+          tag_name: ${{ needs.check-version.outputs.release_tag }}
+          name: ${{ needs.check-version.outputs.release_tag }}
           generate_release_notes: true
           body: |
             ## Docker Images
