@@ -231,6 +231,7 @@ jobs:
                   docker compose -f docker/docker-compose.test.yml ps
                   docker logs uni-proxy-manager-test-dex || true
                   docker logs uni-proxy-manager-test-backend || true
+                  docker logs uni-proxy-manager-test-haproxy || true
                   docker logs uni-proxy-manager-test-db-migrate || true
 
             - name: Cleanup
