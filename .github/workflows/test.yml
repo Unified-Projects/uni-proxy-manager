@@ -108,8 +108,74 @@ jobs:
                   mkdir -p docker/test-data/analytics-website
                   mkdir -p docker/test-data/dex
                   mkdir -p docker/test-data/nginx
-                  test -f docker/test-data/dex/config.yaml
-                  test -f docker/test-data/nginx/index.html
+                  cat > docker/test-data/nginx/index.html <<'EOF'
+                  <html><body><h1>Test Backend</h1></body></html>
+                  EOF
+                  cat > docker/test-data/dex/config.yaml <<'EOF'
+                  issuer: http://test-dex:5556/dex
+                  storage:
+                    type: memory
+                  web:
+                    http: 0.0.0.0:5556
+                  telemetry:
+                    http: 0.0.0.0:5558
+                  oauth2:
+                    skipApprovalScreen: true
+                    responseTypes: ["code", "token", "id_token"]
+                    alwaysShowLoginScreen: false
+                    passwordConnector: local
+                  logger:
+                    level: "debug"
+                    format: "text"
+                  staticClients:
+                    - id: pomerium-test
+                      name: Pomerium Test Client
+                      secret: pomerium-test-secret
+                      redirectURIs:
+                        - http://localhost:5080/oauth2/callback
+                        - http://localhost:5443/oauth2/callback
+                        - http://test-pomerium/oauth2/callback
+                        - http://test-pomerium:80/oauth2/callback
+                    - id: test-client
+                      name: Integration Test Client
+                      secret: test-client-secret
+                      redirectURIs:
+                        - http://localhost:3000/callback
+                        - http://localhost:3001/callback
+                        - http://localhost:3010/callback
+                        - http://127.0.0.1:3000/callback
+                        - http://127.0.0.1:3001/callback
+                        - http://127.0.0.1:3010/callback
+                    - id: test-public-client
+                      name: Public Test Client
+                      public: true
+                      redirectURIs:
+                        - http://localhost:3000/callback
+                        - http://localhost:3010/callback
+                  enablePasswordDB: true
+                  staticPasswords:
+                    - email: admin@test.local
+                      hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+                      username: admin
+                      userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+                    - email: user@test.local
+                      hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+                      username: user
+                      userID: "41331323-6f44-45e6-b3b9-2c4c48c8a6fb"
+                    - email: blocked@test.local
+                      hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+                      username: blocked
+                      userID: "59b38d79-8c67-45f2-bf94-2c4c48c8a6fc"
+                    - email: employee@company.test
+                      hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+                      username: employee
+                      userID: "72c49e8a-1234-5678-9abc-def012345678"
+                    - email: external@external.test
+                      hash: $2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W
+                      username: external
+                      userID: "83d50f9b-2345-6789-abcd-ef0123456789"
+                  connectors: []
+                  EOF
                   cat > docker/test-data/analytics-website/index.html <<'EOF'
                   <!DOCTYPE html>
                   <html lang="en">
