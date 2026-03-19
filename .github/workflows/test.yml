@@ -108,6 +108,7 @@ jobs:
                   mkdir -p docker/test-data/analytics-website
                   mkdir -p docker/test-data/dex
                   mkdir -p docker/test-data/nginx
+                  mkdir -p docker/test-data/pomerium
                   cat > docker/test-data/nginx/index.html <<'EOF'
                   <html><body><h1>Test Backend</h1></body></html>
                   EOF
@@ -175,6 +176,59 @@ jobs:
                       username: external
                       userID: "83d50f9b-2345-6789-abcd-ef0123456789"
                   connectors: []
+                  EOF
+                  cat > docker/test-data/pomerium/config.yaml <<'EOF'
+                  authenticate_service_url: http://test-pomerium:80
+                  cookie_name: _pomerium_test
+                  cookie_expire: 14h
+                  cookie_secure: false
+                  cookie_http_only: true
+                  log_level: debug
+                  routes:
+                    - from: http://test-pomerium
+                      to: http://test-backend:80
+                      prefix: /route/public
+                      prefix_rewrite: /
+                      allow_public_unauthenticated_access: true
+                    - from: http://test-pomerium
+                      to: http://test-backend:80
+                      prefix: /route/app
+                      prefix_rewrite: /
+                      allow_any_authenticated_user: true
+                      pass_identity_headers: true
+                  EOF
+                  cat > docker/test-data/pomerium/policy.yaml <<'EOF'
+                  address: ":80"
+                  insecure_server: true
+                  shared_secret: f/kPSvzhrJlN6XJmZWdtjBX4zDnGBysYuSdmSqlV178=
+                  cookie_secret: BETGZRnPwK9fo2oiXRNRDfzMnxGW4kQsDpySAqdEscI=
+                  signing_key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZzIvL1lPbGhzdlI0YlVTUjUKcGsvZGM5TnRaRHVTT04xbHE4QjJYYmYxcnZtaFJBTkNBQVJPRFhaaGhqM1hnUHkvdm5FUS8yVWJoQlNScVp5WgpZcWp3UndFSWdyU0dOMlFIZ0N3SGw4MVBTdU5VUlJ4c0RSV0dBVkRLYTJtcEo3a1FLNEtIL3ZZNQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==
+                  authenticate_service_url: http://test-pomerium:80
+                  cookie_name: _pomerium
+                  cookie_expire: 14h
+                  cookie_http_only: true
+                  cookie_secure: false
+                  log_level: info
+                  idp_provider: oidc
+                  idp_client_id: pomerium-e2e
+                  idp_client_secret: pomerium-e2e-secret
+                  idp_provider_url: http://test-dex:5556/dex
+                  idp_scopes:
+                    - openid
+                    - email
+                    - profile
+                  routes:
+                    - from: https://e2e-platform.test.local
+                      to: http://10.0.1.100:8080
+                      policy:
+                        - allow:
+                            or:
+                              - email:
+                                  is: admin@test.local
+                      preserve_host_header: true
+                      pass_identity_headers: true
+                      set_request_headers:
+                        X-Forwarded-Proto: https
                   EOF
                   cat > docker/test-data/analytics-website/index.html <<'EOF'
                   <!DOCTYPE html>

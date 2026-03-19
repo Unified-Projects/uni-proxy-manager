@@ -257,7 +257,7 @@ services:
     image: pomerium/pomerium:v0.26.0
     container_name: uni-proxy-manager-test-pomerium
     volumes:
-      - ./test-data/pomerium:/pomerium:rw
+      - ${PWD}/docker/test-data/pomerium:/pomerium:rw
     environment:
       - POMERIUM_DEBUG=true
       - LOG_LEVEL=debug
