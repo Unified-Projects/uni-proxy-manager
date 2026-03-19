@@ -173,7 +173,7 @@ services:
     image: nginx:alpine
     container_name: uni-proxy-manager-test-backend
     volumes:
-      - ${PWD}/docker/test-data/nginx/index.html:/usr/share/nginx/html/index.html:ro
+      - ${PWD}/docker/test-data/nginx:/usr/share/nginx/html:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost/index.html"]
       interval: 5s
@@ -243,7 +243,7 @@ services:
     entrypoint: ["dex"]
     command: ["serve", "/etc/dex/config.yaml"]
     volumes:
-      - ${PWD}/docker/test-data/dex/config.yaml:/etc/dex/config.yaml:ro
+      - ${PWD}/docker/test-data/dex:/etc/dex:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:5558/metrics"]
       interval: 5s
