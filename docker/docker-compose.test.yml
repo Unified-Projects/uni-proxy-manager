@@ -129,7 +129,7 @@ services:
     command:
       - -c
       - |
-        cat > /usr/local/etc/haproxy/haproxy.cfg << 'EOF'
+        cat > /tmp/haproxy.cfg << 'EOF'
         global
             log stdout format raw local0
             maxconn 4096
@@ -152,9 +152,9 @@ services:
             balance roundrobin
             server backend uni-proxy-manager-test-backend:80 check
         EOF
-        exec haproxy -f /usr/local/etc/haproxy/haproxy.cfg
+        exec haproxy -f /tmp/haproxy.cfg
     healthcheck:
-      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      test: ["CMD", "haproxy", "-c", "-f", "/tmp/haproxy.cfg"]
       interval: 10s
       timeout: 5s
       retries: 5
