@@ -29,8 +29,12 @@ COPY packages/queue ./packages/queue
 COPY apps/analytics ./apps/analytics
 COPY tsconfig.json ./
 
-# Create a pruned production bundle of the analytics package
-RUN pnpm --filter=@uni-proxy-manager/analytics --prod deploy /prod/analytics
+# Build the analytics package (compiles TS and minifies client scripts)
+RUN pnpm turbo run build --filter=@uni-proxy-manager/analytics...
+
+# Create a pruned production bundle and include built output
+RUN pnpm --filter=@uni-proxy-manager/analytics --prod deploy /prod/analytics && \
+    cp -r /app/apps/analytics/dist /prod/analytics/dist
 
 FROM oven/bun:1.3-alpine
 
@@ -48,4 +52,4 @@ USER appuser
 
 EXPOSE 3003
 
-CMD ["bun", "run", "src/index.ts"]
+CMD ["bun", "run", "dist/index.js"]
