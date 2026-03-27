@@ -115,24 +115,47 @@ jobs:
             dockerfile: apps/pomerium-workers/Dockerfile
           - name: pomerium-migrator
             dockerfile: docker/pomerium-db-migrate/Dockerfile
+          # Analytics extension
+          - name: analytics
+            dockerfile: apps/analytics/Dockerfile
+          - name: analytics-worker
+            dockerfile: apps/analytics-workers/Dockerfile
 
     steps:
+      - name: Check if image already exists
+        id: check-exists
+        run: |
+          IMAGE="${{ env.DOCKER_USERNAME }}/uni-proxy-${{ matrix.image.name }}"
+          TAG="${{ needs.check-version.outputs.version }}"
+          if docker manifest inspect "${IMAGE}:${TAG}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image ${IMAGE}:${TAG} already exists, skipping build"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image ${IMAGE}:${TAG} not found, will build"
+          fi
+
       - name: Checkout code
+        if: steps.check-exists.outputs.exists != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up QEMU
+        if: steps.check-exists.outputs.exists != 'true'
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
 
       - name: Set up Docker Buildx
+        if: steps.check-exists.outputs.exists != 'true'
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
       - name: Log in to Docker Hub
+        if: steps.check-exists.outputs.exists != 'true'
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  # v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push ${{ matrix.image.name }}
+        if: steps.check-exists.outputs.exists != 'true'
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294  # v7
         with:
           context: .
@@ -186,6 +209,12 @@ jobs:
             docker pull ${{ env.DOCKER_USERNAME }}/uni-proxy-pomerium-migrator:${{ needs.check-version.outputs.version }}
             ```
 
+            ### Analytics Extension
+            ```bash
+            docker pull ${{ env.DOCKER_USERNAME }}/uni-proxy-analytics:${{ needs.check-version.outputs.version }}
+            docker pull ${{ env.DOCKER_USERNAME }}/uni-proxy-analytics-worker:${{ needs.check-version.outputs.version }}
+            ```
+
             Or use the `latest` tags for all images.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -216,3 +245,7 @@ jobs:
           echo "### Pomerium Extension Images" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.DOCKER_USERNAME }}/uni-proxy-pomerium-worker\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.DOCKER_USERNAME }}/uni-proxy-pomerium-migrator\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Analytics Extension Images" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKER_USERNAME }}/uni-proxy-analytics\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKER_USERNAME }}/uni-proxy-analytics-worker\`" >> $GITHUB_STEP_SUMMARY
