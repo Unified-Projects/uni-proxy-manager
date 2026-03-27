@@ -20,7 +20,7 @@
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
     "adm-zip": "^0.5.16",
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "bullmq": "^5.71.0",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.8",
@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "@types/node": "^25.4.0",
     "typescript": "^5.9.3"
   }
