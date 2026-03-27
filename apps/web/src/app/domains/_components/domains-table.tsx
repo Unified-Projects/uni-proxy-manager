@@ -59,9 +59,7 @@ function groupDomainsByRoot<T extends { hostname: string; displayName?: string |
     const rootDomain = getRootDomain(domain.hostname);
 
     if (!groups.has(rootDomain)) {
-      const groupDisplayName =
-        domain.displayName || rootDomain.charAt(0).toUpperCase() + rootDomain.slice(1);
-      groups.set(rootDomain, { rootDomain, displayName: groupDisplayName, domains: [] });
+      groups.set(rootDomain, { rootDomain, displayName: rootDomain, domains: [] });
     }
 
     groups.get(rootDomain)!.domains.push({
@@ -305,10 +303,7 @@ export function DomainsTable({ domains, isLoading }: DomainsTableProps) {
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">{group.displayName}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {group.rootDomain}
-                      </Badge>
+                      <span className="font-medium truncate">{group.rootDomain}</span>
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {group.domains.length} domain{group.domains.length !== 1 ? "s" : ""}

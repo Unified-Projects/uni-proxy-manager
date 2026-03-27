@@ -60,8 +60,8 @@ export function Sidebar() {
   ];
 
   return (
-    <div className="flex h-full w-64 flex-col border-r bg-card">
-      <div className="flex h-16 items-center border-b px-6">
+    <div className="flex h-full w-16 shrink-0 flex-col border-r bg-card xl:w-64">
+      <div className="flex h-16 items-center justify-center border-b px-2 xl:justify-start xl:px-6">
         <Link href="/" className="flex items-center gap-3 font-semibold">
           <Image
             src="/icon.svg"
@@ -70,34 +70,37 @@ export function Sidebar() {
             height={32}
             className="h-8 w-8"
           />
-          <span className="text-slate-800 dark:text-slate-200">Uni-Proxy-Manager</span>
+          <span className="hidden text-slate-800 dark:text-slate-200 xl:inline">
+            Uni-Proxy-Manager
+          </span>
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-2 xl:p-4">
         {navigation.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.name}
               href={item.href}
+              title={item.name}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center justify-center gap-3 rounded-lg px-2 py-2 text-sm font-medium transition-colors xl:justify-start xl:px-3",
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
-              <item.icon className="h-4 w-4" />
-              {item.name}
+              <item.icon className="h-4 w-4 shrink-0" />
+              <span className="hidden truncate xl:inline">{item.name}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t p-4">
-        <p className="text-xs text-muted-foreground">
-          Uni-Proxy-Manager v0.1.0
+      <div className="hidden border-t p-4 xl:block">
+        <p className="truncate text-xs text-muted-foreground">
+          Uni-Proxy-Manager v0.1.1
         </p>
       </div>
     </div>

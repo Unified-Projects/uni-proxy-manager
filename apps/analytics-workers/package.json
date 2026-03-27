@@ -1,6 +1,6 @@
 {
   "name": "@uni-proxy-manager/analytics-workers",
-  "version": "1.0.0",
+  "version": "0.1.1",
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",

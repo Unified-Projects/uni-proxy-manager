@@ -3,6 +3,7 @@ import { testClient } from "../setup/test-client";
 import { testDb, clearDatabase, closeTestDb } from "../setup/test-db";
 import { createErrorPageFixture, createTestZipFile } from "../setup/fixtures";
 import { generatePreview, closeBrowser } from "../../../apps/api/src/services/preview-generator";
+import { checkPlaywrightAvailable } from "../setup/playwright-check";
 import { access, readFile, mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { getErrorPagesDir } from "@uni-proxy-manager/shared/config";
@@ -12,10 +13,11 @@ import { eq } from "drizzle-orm";
 describe("Preview Generation Worker", () => {
   const errorPagesDir = getErrorPagesDir();
   let testPageId: string;
-  let testHtmlPath: string;
+  let playwrightAvailable = false;
 
   beforeAll(async () => {
     await clearDatabase();
+    playwrightAvailable = await checkPlaywrightAvailable();
   });
 
   afterAll(async () => {
@@ -28,175 +30,170 @@ describe("Preview Generation Worker", () => {
   });
 
   describe("generatePreview Function", () => {
-    it("should generate PNG preview from HTML file", async () => {
-      // Create a test error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      testPageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should generate PNG preview from HTML file",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        testPageId = createRes.body.errorPage.id;
 
-      // Upload HTML content
-      const zipFile = await createTestZipFile(
-        "<html><body style='background:blue;color:white;'><h1>503 Error</h1></body></html>"
-      );
-      await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
+        const zipFile = await createTestZipFile(
+          "<html><body style='background:blue;color:white;'><h1>503 Error</h1></body></html>"
+        );
+        await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
 
-      // The upload should have generated a preview
-      // Let's verify the preview file exists
-      const previewPath = join(errorPagesDir, testPageId, "preview.png");
-
-      try {
+        const previewPath = join(errorPagesDir, testPageId, "preview.png");
         await access(previewPath);
-        const stats = await readFile(previewPath);
+        const fileContents = await readFile(previewPath);
 
         // Verify it's a valid PNG (check magic bytes)
-        expect(stats[0]).toBe(0x89);
-        expect(stats[1]).toBe(0x50); // P
-        expect(stats[2]).toBe(0x4E); // N
-        expect(stats[3]).toBe(0x47); // G
-      } catch {
-        // Preview generation might be disabled in test environment
-        // That's OK - we're testing the integration
+        expect(fileContents.length).toBeGreaterThan(0);
+        expect(fileContents[0]).toBe(0x89);
+        expect(fileContents[1]).toBe(0x50); // P
+        expect(fileContents[2]).toBe(0x4e); // N
+        expect(fileContents[3]).toBe(0x47); // G
       }
-    });
+    );
 
-    it("should update database with preview path after generation", async () => {
-      // Create error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      testPageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should update database with preview path after generation",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        testPageId = createRes.body.errorPage.id;
 
-      // Upload content
-      const zipFile = await createTestZipFile(
-        "<html><body><h1>Test Page</h1></body></html>"
-      );
-      await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
+        const zipFile = await createTestZipFile(
+          "<html><body><h1>Test Page</h1></body></html>"
+        );
+        await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
 
-      // Check database for preview path
-      const errorPage = await testDb.query.errorPages.findFirst({
-        where: eq(schema.errorPages.id, testPageId),
-      });
+        const errorPage = await testDb.query.errorPages.findFirst({
+          where: eq(schema.errorPages.id, testPageId),
+        });
 
-      // Preview path should be set (if generation succeeded)
-      if (errorPage?.previewImagePath) {
-        expect(errorPage.previewImagePath).toContain(testPageId);
-        expect(errorPage.previewImagePath).toContain("preview.png");
+        expect(errorPage).toBeDefined();
+        expect(errorPage!.previewImagePath).toBeDefined();
+        expect(errorPage!.previewImagePath).toContain(testPageId);
+        expect(errorPage!.previewImagePath).toContain("preview.png");
       }
-    });
+    );
 
-    it("should regenerate preview when requested", async () => {
-      // Create and upload error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      testPageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should regenerate preview when requested",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        testPageId = createRes.body.errorPage.id;
 
-      const zipFile = await createTestZipFile(
-        "<html><body><h1>Original</h1></body></html>"
-      );
-      await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
+        const zipFile = await createTestZipFile(
+          "<html><body><h1>Original</h1></body></html>"
+        );
+        await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
 
-      // Request regeneration
-      const regenRes = await testClient.post<{ success: boolean; errorPage: any }>(
-        `/api/error-pages/${testPageId}/regenerate-preview`
-      );
+        const regenRes = await testClient.post<{ success: boolean; errorPage: any }>(
+          `/api/error-pages/${testPageId}/regenerate-preview`
+        );
 
-      expect(regenRes.status).toBe(200);
-      expect(regenRes.body.success).toBe(true);
-
-      // Preview path should still be set
-      if (regenRes.body.errorPage?.previewImagePath) {
+        expect(regenRes.status).toBe(200);
+        expect(regenRes.body.success).toBe(true);
+        expect(regenRes.body.errorPage.previewImagePath).toBeDefined();
         expect(regenRes.body.errorPage.previewImagePath).toContain("preview.png");
       }
-    });
+    );
 
-    it("should fail gracefully for invalid HTML", async () => {
-      // Create error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      testPageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should render preview even for malformed HTML (browsers are forgiving)",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        testPageId = createRes.body.errorPage.id;
 
-      // Create a test directory with invalid HTML
-      const pageDir = join(errorPagesDir, testPageId);
-      try {
-        await mkdir(pageDir, { recursive: true });
-        await writeFile(join(pageDir, "index.html"), "not valid html at all <<<>>>>");
-
-        // Try to generate preview
+        const pageDir = join(errorPagesDir, testPageId);
         try {
-          await generatePreview(testPageId, join(pageDir, "index.html"));
-          // If it succeeds, that's fine too - browsers are forgiving
-        } catch (error) {
-          // Expected to fail for truly broken HTML
-          expect(error).toBeDefined();
+          await mkdir(pageDir, { recursive: true });
+          await writeFile(join(pageDir, "index.html"), "not valid html at all <<<>>>>");
+
+          // Browsers render even broken HTML, so this should succeed
+          const previewPath = await generatePreview(testPageId, join(pageDir, "index.html"));
+          expect(previewPath).toBe(`${testPageId}/preview.png`);
+
+          // Verify the preview file was created
+          const previewFile = await readFile(join(errorPagesDir, previewPath));
+          expect(previewFile.length).toBeGreaterThan(0);
+          expect(previewFile[0]).toBe(0x89); // PNG magic byte
+        } finally {
+          try {
+            await rm(pageDir, { recursive: true });
+          } catch {
+            // Best-effort cleanup
+          }
         }
-      } finally {
-        // Cleanup
-        try {
-          await rm(pageDir, { recursive: true });
-        } catch {}
       }
-    });
+    );
 
-    it("should handle missing HTML file", async () => {
-      const fakePageId = "nonexistent-page-id";
-      const fakePath = join(errorPagesDir, fakePageId, "index.html");
+    it.skipIf(!playwrightAvailable)(
+      "should handle missing HTML file with an error",
+      async () => {
+        const fakePageId = "nonexistent-page-id";
+        const fakePath = join(errorPagesDir, fakePageId, "index.html");
 
-      try {
-        await generatePreview(fakePageId, fakePath);
-        // Should not reach here
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error).toBeDefined();
+        await expect(
+          generatePreview(fakePageId, fakePath)
+        ).rejects.toThrow("Failed to generate preview");
       }
-    });
+    );
   });
 
   describe("Preview API Endpoints", () => {
-    it("should serve preview image via API", async () => {
-      // Create and upload error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      testPageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should serve preview image via API with 200 status",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        testPageId = createRes.body.errorPage.id;
 
-      const zipFile = await createTestZipFile(
-        "<html><body style='background:red;'><h1>Error</h1></body></html>"
-      );
-      await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
+        const zipFile = await createTestZipFile(
+          "<html><body style='background:red;'><h1>Error</h1></body></html>"
+        );
+        await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
 
-      // Request preview via API
-      const previewRes = await testClient.getRaw(`/api/error-pages/${testPageId}/preview.png`);
+        const previewRes = await testClient.getRaw(`/api/error-pages/${testPageId}/preview.png`);
 
-      // Should return image/png content type
-      expect(previewRes.headers.get("content-type")).toBe("image/png");
+        expect(previewRes.status).toBe(200);
+        expect(previewRes.headers.get("content-type")).toBe("image/png");
 
-      // Should return either 200 (success) or 404 (fallback transparent PNG)
-      expect([200, 404]).toContain(previewRes.status);
-    });
+        // Verify valid PNG content
+        const buffer = await previewRes.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        expect(bytes[0]).toBe(0x89);
+        expect(bytes[1]).toBe(0x50);
+        expect(bytes[2]).toBe(0x4e);
+        expect(bytes[3]).toBe(0x47);
+      }
+    );
 
     it("should return transparent PNG for page without preview", async () => {
-      // Create error page without upload
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
         createErrorPageFixture("503")
       );
       testPageId = createRes.body.errorPage.id;
 
-      // Request preview (should return fallback)
       const previewRes = await testClient.getRaw(`/api/error-pages/${testPageId}/preview.png`);
 
       expect(previewRes.status).toBe(404);
       expect(previewRes.headers.get("content-type")).toBe("image/png");
 
-      // Verify it's a valid PNG
       const buffer = await previewRes.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       expect(bytes[0]).toBe(0x89);
@@ -205,7 +202,7 @@ describe("Preview Generation Worker", () => {
   });
 
   describe("Preview for Different Error Page Types", () => {
-    it.each([
+    it.skipIf(!playwrightAvailable).each([
       ["503", "<h1>503 Service Unavailable</h1>"],
       ["404", "<h1>404 Not Found</h1>"],
       ["500", "<h1>500 Internal Server Error</h1>"],
@@ -220,66 +217,83 @@ describe("Preview Generation Worker", () => {
       const zipFile = await createTestZipFile(
         `<html><body>${content}</body></html>`
       );
-      await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
+      const uploadRes = await testClient.uploadFile<{ success: boolean; errorPage: any }>(
+        `/api/error-pages/${testPageId}/upload`,
+        zipFile
+      );
 
-      // Verify upload was successful and preview was generated
+      expect(uploadRes.status).toBe(200);
+      expect(uploadRes.body.success).toBe(true);
+
+      // Verify preview was actually generated
       const getRes = await testClient.get<{ errorPage: any }>(
         `/api/error-pages/${testPageId}`
       );
-
       expect(getRes.body.errorPage.uploadedAt).toBeDefined();
+      expect(getRes.body.errorPage.previewImagePath).toBeDefined();
+      expect(getRes.body.errorPage.previewImagePath).toContain("preview.png");
     });
   });
 
   describe("Preview Cache Busting", () => {
-    it("should support cache busting query parameter", async () => {
-      // Create and upload error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      testPageId = createRes.body.errorPage.id;
-
-      const zipFile = await createTestZipFile("<html><body>Test</body></html>");
-      await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
-
-      // Request with cache buster
-      const timestamp = Date.now();
-      const previewRes = await testClient.getRaw(
-        `/api/error-pages/${testPageId}/preview.png?t=${timestamp}`
-      );
-
-      // Should still return the image
-      expect(previewRes.headers.get("content-type")).toBe("image/png");
-    });
-  });
-
-  describe("Concurrent Preview Generation", () => {
-    it("should handle multiple preview generations concurrently", async () => {
-      // Create multiple error pages
-      const pages: string[] = [];
-      for (let i = 0; i < 3; i++) {
+    it.skipIf(!playwrightAvailable)(
+      "should support cache busting query parameter",
+      async () => {
         const createRes = await testClient.post<{ errorPage: any }>(
           "/api/error-pages",
           createErrorPageFixture("503")
         );
-        pages.push(createRes.body.errorPage.id);
-      }
+        testPageId = createRes.body.errorPage.id;
 
-      // Upload to all pages concurrently
-      const uploadPromises = pages.map(async (pageId, i) => {
-        const zipFile = await createTestZipFile(
-          `<html><body><h1>Page ${i}</h1></body></html>`
+        const zipFile = await createTestZipFile("<html><body>Test</body></html>");
+        await testClient.uploadFile(`/api/error-pages/${testPageId}/upload`, zipFile);
+
+        const timestamp = Date.now();
+        const previewRes = await testClient.getRaw(
+          `/api/error-pages/${testPageId}/preview.png?t=${timestamp}`
         );
-        return testClient.uploadFile(`/api/error-pages/${pageId}/upload`, zipFile);
-      });
 
-      const results = await Promise.all(uploadPromises);
-
-      // All uploads should succeed
-      for (const result of results) {
-        expect(result.status).toBe(200);
+        expect(previewRes.status).toBe(200);
+        expect(previewRes.headers.get("content-type")).toBe("image/png");
       }
-    });
+    );
+  });
+
+  describe("Concurrent Preview Generation", () => {
+    it.skipIf(!playwrightAvailable)(
+      "should handle multiple preview generations concurrently",
+      async () => {
+        const pages: string[] = [];
+        for (let i = 0; i < 3; i++) {
+          const createRes = await testClient.post<{ errorPage: any }>(
+            "/api/error-pages",
+            createErrorPageFixture("503")
+          );
+          pages.push(createRes.body.errorPage.id);
+        }
+
+        const uploadPromises = pages.map(async (pageId, i) => {
+          const zipFile = await createTestZipFile(
+            `<html><body><h1>Page ${i}</h1></body></html>`
+          );
+          return testClient.uploadFile(`/api/error-pages/${pageId}/upload`, zipFile);
+        });
+
+        const results = await Promise.all(uploadPromises);
+
+        for (const result of results) {
+          expect(result.status).toBe(200);
+        }
+
+        // Verify all pages got previews
+        for (const pageId of pages) {
+          const getRes = await testClient.get<{ errorPage: any }>(
+            `/api/error-pages/${pageId}`
+          );
+          expect(getRes.body.errorPage.previewImagePath).toBeDefined();
+          expect(getRes.body.errorPage.previewImagePath).toContain("preview.png");
+        }
+      }
+    );
   });
 });

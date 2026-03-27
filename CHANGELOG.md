@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-03-27
+
+### Fixed
+- Fix analytics Dockerfile to serve minified scripts
+- Fix release workflow to use correct version tags for images and GitHub releases
+- Stabilize CI docker startup (Pomerium, HAProxy, Dex config mounts and health checks)
+
+### Changed
+- Domain status improvements and routing updates
+- Data table and dialog component refinements
+- HAProxy settings UI updates
+- Updated integration tests for error pages, maintenance pages, and preview generation
+
 ## [0.1.0] - 2026-03-18
 
 ### Added

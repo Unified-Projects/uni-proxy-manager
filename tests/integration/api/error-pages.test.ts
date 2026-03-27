@@ -6,12 +6,16 @@ import {
   createTestZipFile,
   createDomainFixture,
 } from "../setup/fixtures";
+import { checkPlaywrightAvailable } from "../setup/playwright-check";
 import * as schema from "../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
+
+let playwrightAvailable = false;
 
 describe("Error Pages API", () => {
   beforeAll(async () => {
     await clearDatabase();
+    playwrightAvailable = await checkPlaywrightAvailable();
   });
 
   afterAll(async () => {
@@ -364,32 +368,33 @@ describe("Error Pages API", () => {
   });
 
   describe("POST /api/error-pages/:id/regenerate-preview", () => {
-    it("should regenerate preview after upload", async () => {
-      // Create error page
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      const pageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should regenerate preview after upload",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        const pageId = createRes.body.errorPage.id;
 
-      // Upload files first
-      const zipFile = await createTestZipFile(
-        "<html><body>Service Unavailable</body></html>"
-      );
-      await testClient.uploadFile(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+        const zipFile = await createTestZipFile(
+          "<html><body>Service Unavailable</body></html>"
+        );
+        await testClient.uploadFile(
+          `/api/error-pages/${pageId}/upload`,
+          zipFile
+        );
 
-      // Now regenerate preview
-      const response = await testClient.post<{ success: boolean; errorPage: any }>(
-        `/api/error-pages/${pageId}/regenerate-preview`
-      );
+        const response = await testClient.post<{ success: boolean; errorPage: any }>(
+          `/api/error-pages/${pageId}/regenerate-preview`
+        );
 
-      expect(response.status).toBe(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.errorPage.previewImagePath).toBeDefined();
-    });
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.errorPage.previewImagePath).toBeDefined();
+        expect(response.body.errorPage.previewImagePath).toContain("preview.png");
+      }
+    );
 
     it("should fail to regenerate preview without upload", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
@@ -415,29 +420,39 @@ describe("Error Pages API", () => {
   });
 
   describe("GET /api/error-pages/:id/preview.png", () => {
-    it("should return preview image for uploaded page", async () => {
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createErrorPageFixture("503")
-      );
-      const pageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should return 200 with valid PNG preview for uploaded page",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        const pageId = createRes.body.errorPage.id;
 
-      const zipFile = await createTestZipFile(
-        "<html><body>Service Unavailable</body></html>"
-      );
-      await testClient.uploadFile(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+        const zipFile = await createTestZipFile(
+          "<html><body>Service Unavailable</body></html>"
+        );
+        await testClient.uploadFile(
+          `/api/error-pages/${pageId}/upload`,
+          zipFile
+        );
 
-      const response = await testClient.getRaw(
-        `/api/error-pages/${pageId}/preview.png`
-      );
+        const response = await testClient.getRaw(
+          `/api/error-pages/${pageId}/preview.png`
+        );
 
-      // Should return image with correct content type
-      expect([200, 404]).toContain(response.status);
-      expect(response.headers.get("content-type")).toBe("image/png");
-    });
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("image/png");
+
+        // Verify valid PNG content
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        expect(bytes[0]).toBe(0x89);
+        expect(bytes[1]).toBe(0x50);
+        expect(bytes[2]).toBe(0x4e);
+        expect(bytes[3]).toBe(0x47);
+      }
+    );
 
     it("should return transparent PNG with 404 status for page without preview", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(

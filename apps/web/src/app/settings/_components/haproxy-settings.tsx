@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import * as Diff from "diff";
-import { Activity, AlertCircle, RefreshCw, Clock, Copy, Check, FileText, Eye, ShieldCheck } from "lucide-react";
+import { Activity, AlertCircle, RefreshCw, Copy, Check, FileText, Eye, ShieldCheck } from "lucide-react";
 import {
   Badge,
   Button,
@@ -192,11 +192,11 @@ export function HaproxySettings() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="flex items-center gap-3">
                 <div className="rounded-md bg-muted p-2">
-                  <Clock className="h-4 w-4" />
+                  <Activity className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Uptime</p>
-                  <p className="font-medium">{status?.uptime ?? "N/A"}</p>
+                  <p className="text-sm text-muted-foreground">Current Connections</p>
+                  <p className="font-medium">{status?.currentConnections ?? 0}</p>
                 </div>
               </div>
 

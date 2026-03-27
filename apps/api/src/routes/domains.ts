@@ -3,7 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { nanoid } from "nanoid";
 import { db } from "@uni-proxy-manager/database";
-import { domains, backends, certificates, dnsProviders, domainRouteRules, pomeriumRoutes } from "@uni-proxy-manager/database/schema";
+import { domains, backends, certificates, dnsProviders, domainRouteRules, pomeriumRoutes, domainSharedBackends } from "@uni-proxy-manager/database/schema";
 import { eq, and } from "drizzle-orm";
 import { computeDomainStatus, type CertificateForWildcardCheck } from "@uni-proxy-manager/shared/domain-status";
 import { Queue } from "bullmq";
@@ -140,6 +140,13 @@ app.get("/", async (c) => {
       })).map(r => r.domainId)
     );
 
+    // Fetch domain IDs that have shared backends
+    const sharedBackendDomainIds = new Set(
+      (await db.query.domainSharedBackends.findMany({
+        columns: { domainId: true },
+      })).map(r => r.domainId)
+    );
+
     // Add computed status to each domain
     const domainsWithStatus = allDomains.map((domain) => ({
       ...domain,
@@ -147,6 +154,7 @@ app.get("/", async (c) => {
         ...domain,
         hasRedirectRoutes: redirectRuleDomainIds.has(domain.id),
         hasPomeriumRoutes: pomeriumRouteDomainIds.has(domain.id),
+        hasSharedBackends: sharedBackendDomainIds.has(domain.id),
       }, allCertificates),
     }));
 
@@ -181,14 +189,18 @@ app.get("/:id", async (c) => {
       altNames: cert.altNames ?? undefined,
     }));
 
-    // Check for redirect route rules and pomerium routes for this domain
-    const [redirectRuleCount, pomeriumRouteCount] = await Promise.all([
+    // Check for redirect route rules, pomerium routes, and shared backends for this domain
+    const [redirectRuleCount, pomeriumRouteCount, sharedBackendCount] = await Promise.all([
       db.query.domainRouteRules.findMany({
         where: and(eq(domainRouteRules.domainId, id), eq(domainRouteRules.actionType, "redirect"), eq(domainRouteRules.enabled, true)),
         columns: { id: true },
       }),
       db.query.pomeriumRoutes.findMany({
         where: eq(pomeriumRoutes.domainId, id),
+        columns: { id: true },
+      }),
+      db.query.domainSharedBackends.findMany({
+        where: eq(domainSharedBackends.domainId, id),
         columns: { id: true },
       }),
     ]);
@@ -200,6 +212,7 @@ app.get("/:id", async (c) => {
         ...domain,
         hasRedirectRoutes: redirectRuleCount.length > 0,
         hasPomeriumRoutes: pomeriumRouteCount.length > 0,
+        hasSharedBackends: sharedBackendCount.length > 0,
       }, allCertificates),
     };
 

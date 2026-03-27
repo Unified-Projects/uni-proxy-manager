@@ -382,11 +382,6 @@ export default function DashboardPage() {
                     <p className="font-medium">
                       {haproxyStatus.status === "running" ? "Operational" : "Not Running"}
                     </p>
-                    {haproxyStatus.uptime && (
-                      <p className="text-sm text-muted-foreground">
-                        Uptime: {haproxyStatus.uptime}
-                      </p>
-                    )}
                   </div>
                 </div>
                 <Link href="/settings">

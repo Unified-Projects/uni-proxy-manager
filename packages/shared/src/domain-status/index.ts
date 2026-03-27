@@ -22,6 +22,7 @@ export interface DomainForStatus {
   } | null;
   hasRedirectRoutes?: boolean;
   hasPomeriumRoutes?: boolean;
+  hasSharedBackends?: boolean;
 }
 
 export interface CertificateForWildcardCheck {
@@ -111,11 +112,12 @@ export function computeDomainStatus(
 
   // Check if there are any backends configured
   const enabledBackends = domain.backends?.filter((b) => b.enabled) ?? [];
-  if (enabledBackends.length === 0 && !domain.hasRedirectRoutes && !domain.hasPomeriumRoutes) {
+  const hasAlternativeRouting = domain.hasRedirectRoutes || domain.hasPomeriumRoutes || domain.hasSharedBackends;
+  if (enabledBackends.length === 0 && !hasAlternativeRouting) {
     return "no-backends";
   }
 
-  // Check backend health
+  // Check backend health (only when there are direct backends to check)
   const healthyBackends = enabledBackends.filter((b) => b.isHealthy);
   if (enabledBackends.length > 0 && healthyBackends.length === 0) {
     return "offline";

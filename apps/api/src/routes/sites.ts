@@ -212,6 +212,7 @@ app.post("/", zValidator("json", createSiteSchema), async (c) => {
         productionDomainId: data.productionDomainId,
         errorPageId: data.errorPageId,
         maintenancePageId: data.maintenancePageId,
+        maintenanceEnabled: data.maintenanceEnabled ?? false,
         s3ProviderId: data.s3ProviderId,
         status: "disabled",
       })

@@ -6,10 +6,14 @@ import {
   createTestZipFile,
   createDomainFixture,
 } from "../setup/fixtures";
+import { checkPlaywrightAvailable } from "../setup/playwright-check";
+
+let playwrightAvailable = false;
 
 describe("Maintenance Pages API", () => {
   beforeAll(async () => {
     await clearDatabase();
+    playwrightAvailable = await checkPlaywrightAvailable();
   });
 
   afterAll(async () => {
@@ -96,26 +100,29 @@ describe("Maintenance Pages API", () => {
       expect(response.body.errorPage.fileSize).toBeGreaterThan(0);
     });
 
-    it("should auto-generate preview on upload", async () => {
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createMaintenancePageFixture()
-      );
-      const pageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should auto-generate preview on upload",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createMaintenancePageFixture()
+        );
+        const pageId = createRes.body.errorPage.id;
 
-      const zipFile = await createTestZipFile(
-        "<html><body><h1>Under Maintenance</h1></body></html>"
-      );
-      const response = await testClient.uploadFile<{ success: boolean; errorPage: any }>(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+        const zipFile = await createTestZipFile(
+          "<html><body><h1>Under Maintenance</h1></body></html>"
+        );
+        const response = await testClient.uploadFile<{ success: boolean; errorPage: any }>(
+          `/api/error-pages/${pageId}/upload`,
+          zipFile
+        );
 
-      expect(response.status).toBe(200);
-      // Preview may or may not be generated depending on environment
-      // Just check upload succeeded
-      expect(response.body.success).toBe(true);
-    });
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.errorPage.previewImagePath).toBeDefined();
+        expect(response.body.errorPage.previewImagePath).toContain("preview.png");
+      }
+    );
   });
 
   describe("POST /api/error-pages/:id/assign/:domainId (maintenance)", () => {
@@ -239,29 +246,33 @@ describe("Maintenance Pages API", () => {
   });
 
   describe("POST /api/error-pages/:id/regenerate-preview (maintenance)", () => {
-    it("should regenerate preview for maintenance page", async () => {
-      const createRes = await testClient.post<{ errorPage: any }>(
-        "/api/error-pages",
-        createMaintenancePageFixture()
-      );
-      const pageId = createRes.body.errorPage.id;
+    it.skipIf(!playwrightAvailable)(
+      "should regenerate preview for maintenance page",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createMaintenancePageFixture()
+        );
+        const pageId = createRes.body.errorPage.id;
 
-      // Upload files first
-      const zipFile = await createTestZipFile(
-        "<html><body><h1>Under Maintenance</h1></body></html>"
-      );
-      await testClient.uploadFile(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+        const zipFile = await createTestZipFile(
+          "<html><body><h1>Under Maintenance</h1></body></html>"
+        );
+        await testClient.uploadFile(
+          `/api/error-pages/${pageId}/upload`,
+          zipFile
+        );
 
-      const response = await testClient.post<{ success: boolean; errorPage: any }>(
-        `/api/error-pages/${pageId}/regenerate-preview`
-      );
+        const response = await testClient.post<{ success: boolean; errorPage: any }>(
+          `/api/error-pages/${pageId}/regenerate-preview`
+        );
 
-      expect(response.status).toBe(200);
-      expect(response.body.success).toBe(true);
-    });
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.errorPage.previewImagePath).toBeDefined();
+        expect(response.body.errorPage.previewImagePath).toContain("preview.png");
+      }
+    );
 
     it("should fail without uploaded files", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
