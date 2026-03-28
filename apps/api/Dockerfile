@@ -54,7 +54,20 @@ FROM oven/bun:1.3-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache curl
+# Install curl, Chromium and dependencies for Playwright preview generation
+RUN apk add --no-cache \
+    curl \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    font-noto-emoji
+
+# Set Playwright to use system Chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 RUN addgroup -g 1001 -S appuser && \
     adduser -u 1001 -S appuser -G appuser
