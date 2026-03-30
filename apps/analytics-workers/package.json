@@ -11,11 +11,11 @@
     "@uni-proxy-manager/database": "workspace:*",
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
-    "bullmq": "^5.71.0",
+    "bullmq": "^5.71.1",
     "drizzle-orm": "^0.45.1",
     "ioredis": "5.10.0",
     "nanoid": "^5.1.7",
-    "picomatch": "^4.0.3"
+    "picomatch": "^4.0.4"
   },
   "devDependencies": {
     "@types/picomatch": "^4.0.2",

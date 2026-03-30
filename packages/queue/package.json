@@ -24,7 +24,7 @@
     "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "bullmq": "^5.71.0",
+    "bullmq": "^5.71.1",
     "ioredis": "5.10.0"
   },
   "devDependencies": {
