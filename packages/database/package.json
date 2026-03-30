@@ -23,11 +23,11 @@
   },
   "dependencies": {
     "@uni-proxy-manager/shared": "workspace:*",
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.8"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.9",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.9.3"
   }
 }
