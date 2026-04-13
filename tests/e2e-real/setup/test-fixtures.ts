@@ -11,6 +11,7 @@ import { join, dirname } from "path";
 // Test configuration
 export const E2E_CONFIG = {
   API_URL: process.env.E2E_API_URL || "http://127.0.0.1:3099",
+  API_KEY: process.env.E2E_API_KEY || "e2e-test-api-key-0123456789abcdef",
   EXECUTOR_URL: process.env.E2E_EXECUTOR_URL || "http://127.0.0.1:8080",
   EXECUTOR_SECRET: process.env.E2E_EXECUTOR_SECRET || "e2e-test-executor-secret",
   POSTGRES_URL:
@@ -26,9 +27,11 @@ export const E2E_CONFIG = {
  */
 export class E2EApiClient {
   private baseUrl: string;
+  private apiKey: string;
 
-  constructor(baseUrl: string = E2E_CONFIG.API_URL) {
+  constructor(baseUrl: string = E2E_CONFIG.API_URL, apiKey: string = E2E_CONFIG.API_KEY) {
     this.baseUrl = baseUrl;
+    this.apiKey = apiKey;
   }
 
   async request<T>(
@@ -43,6 +46,7 @@ export class E2EApiClient {
       method: options.method || "GET",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
         ...options.headers,
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -103,6 +107,9 @@ export class E2EApiClient {
 
     const response = await fetch(`${this.baseUrl}/api/sites/${siteId}/upload`, {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
       body: formData,
     });
 

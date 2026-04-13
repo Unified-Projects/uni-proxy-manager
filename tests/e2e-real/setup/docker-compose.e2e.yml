@@ -115,6 +115,8 @@ services:
     environment:
       UNI_PROXY_MANAGER_DB_URL: "postgresql://e2e_user:e2e_password@e2e-postgres:5432/uni_proxy_e2e?sslmode=disable"
       UNI_PROXY_MANAGER_REDIS_URL: "redis://e2e-redis:6379"
+      UNI_PROXY_MANAGER_API_KEY: "e2e-test-api-key-0123456789abcdef"
+      UNI_PROXY_MANAGER_AUTH_ENABLED: "true"
       UNI_PROXY_MANAGER_HAPROXY_CONFIG_PATH: "/data/haproxy/haproxy.cfg"
       UNI_PROXY_MANAGER_CERTS_DIR: "/data/certificates"
       UNI_PROXY_MANAGER_ERROR_PAGES_DIR: "/data/error-pages"
