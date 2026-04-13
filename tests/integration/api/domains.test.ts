@@ -4,6 +4,9 @@ import { testDb, clearDatabase, closeTestDb } from "../setup/test-db";
 import { createDomainFixture, createBackendFixture } from "../setup/fixtures";
 import * as schema from "../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
+import { access, mkdtemp, rm, writeFile } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 
 describe("Domains API", () => {
   beforeAll(async () => {
@@ -70,6 +73,38 @@ describe("Domains API", () => {
       expect(response.body.domain.forceHttps).toBe(false);
       expect(response.body.domain.acmeVerificationMethod).toBe("none");
     });
+
+    it("should link auto-created certificates back to the domain", async () => {
+      const dnsProviderId = "auto-cert-dns-provider";
+      await testDb.insert(schema.dnsProviders).values({
+        id: dnsProviderId,
+        name: "Auto Cert DNS",
+        type: "cloudflare",
+        credentials: { apiToken: "token" },
+      });
+
+      const hostname = `auto-cert-${Date.now()}.example.com`;
+      const response = await testClient.post<{ domain: any }>("/api/domains", {
+        hostname,
+        sslEnabled: true,
+        forceHttps: true,
+        acmeVerificationMethod: "dns-01",
+        acmeDnsProviderId: dnsProviderId,
+      });
+
+      expect(response.status).toBe(201);
+
+      const createdDomain = await testDb.query.domains.findFirst({
+        where: eq(schema.domains.id, response.body.domain.id),
+      });
+      expect(createdDomain?.certificateId).toBeTruthy();
+
+      const linkedCertificate = await testDb.query.certificates.findFirst({
+        where: eq(schema.certificates.id, createdDomain!.certificateId!),
+      });
+      expect(linkedCertificate?.domainId).toBe(response.body.domain.id);
+      expect(linkedCertificate?.commonName).toBe(hostname);
+    });
   });
 
   describe("GET /api/domains", () => {
@@ -106,6 +141,30 @@ describe("Domains API", () => {
       expect(response.status).toBe(200);
       expect(response.body.domains).toHaveLength(0);
     });
+
+    it("should not mark the Pomerium authenticate hostname as no-backends", async () => {
+      await testDb.insert(schema.pomeriumSettings).values({
+        id: "default",
+        authenticateServiceUrl: "https://auth.example.com",
+      });
+
+      await testClient.post("/api/domains", createDomainFixture({
+        hostname: "auth.example.com",
+        sslEnabled: false,
+        forceHttps: false,
+      }));
+
+      const response = await testClient.get<{ domains: any[] }>("/api/domains");
+
+      expect(response.status).toBe(200);
+
+      const authDomain = response.body.domains.find(
+        (domain) => domain.hostname === "auth.example.com"
+      );
+
+      expect(authDomain).toBeDefined();
+      expect(authDomain.statusComputed).not.toBe("no-backends");
+    });
   });
 
   describe("GET /api/domains/:id", () => {
@@ -133,6 +192,29 @@ describe("Domains API", () => {
       const response = await testClient.get("/api/domains/non-existent-id");
 
       expect(response.status).toBe(404);
+    });
+
+    it("should treat the configured Pomerium authenticate hostname as alternative routing", async () => {
+      await testDb.insert(schema.pomeriumSettings).values({
+        id: "default",
+        authenticateServiceUrl: "https://auth.example.com",
+      });
+
+      const createRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({
+          hostname: "auth.example.com",
+          sslEnabled: false,
+          forceHttps: false,
+        })
+      );
+
+      const response = await testClient.get<{ domain: any }>(
+        `/api/domains/${createRes.body.domain.id}`
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.domain.statusComputed).not.toBe("no-backends");
     });
   });
 
@@ -241,6 +323,46 @@ describe("Domains API", () => {
       const response = await testClient.delete("/api/domains/non-existent-id");
 
       expect(response.status).toBe(404);
+    });
+
+    it("should not delete unmanaged absolute certificate directories when deleting a domain", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({
+          hostname: "delete-domain-cert.example.com",
+          sslEnabled: false,
+          forceHttps: false,
+        })
+      );
+      const domainId = domainRes.body.domain.id;
+      const outsideDir = await mkdtemp(join(tmpdir(), "upm-domain-cert-"));
+
+      try {
+        const outsideCertPath = join(outsideDir, "cert.pem");
+        await writeFile(outsideCertPath, "outside-cert");
+
+        await testDb.insert(schema.certificates).values({
+          id: "domain-outside-cert",
+          domainId,
+          commonName: "delete-domain-cert.example.com",
+          source: "manual",
+          status: "active",
+          certPath: outsideCertPath,
+        });
+        await testDb
+          .update(schema.domains)
+          .set({ certificateId: "domain-outside-cert" })
+          .where(eq(schema.domains.id, domainId));
+
+        const response = await testClient.delete<{ success: boolean }>(
+          `/api/domains/${domainId}`
+        );
+
+        expect(response.status).toBe(200);
+        await expect(access(outsideDir)).resolves.toBeUndefined();
+      } finally {
+        await rm(outsideDir, { recursive: true, force: true });
+      }
     });
   });
 });

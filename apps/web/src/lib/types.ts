@@ -178,7 +178,13 @@ export interface UpdateBackendData {
 }
 
 // Certificate types
-export type CertificateStatus = "pending" | "issuing" | "active" | "expired" | "failed" | "revoked";
+export type CertificateStatus =
+  | "pending"
+  | "issuing"
+  | "active"
+  | "expired"
+  | "failed"
+  | "revoked";
 
 export interface Certificate {
   id: string;
@@ -214,6 +220,8 @@ export interface RequestCertificateData {
 }
 
 export interface UpdateCertificateData {
+  altNames?: string[];
+  reissue?: boolean;
   autoRenew?: boolean;
   renewBeforeDays?: number;
   dnsProviderId?: string | null;
@@ -235,7 +243,9 @@ export interface NamecheapCredentials {
   username?: string;
 }
 
-export type DnsProviderCredentials = CloudflareCredentials | NamecheapCredentials;
+export type DnsProviderCredentials =
+  | CloudflareCredentials
+  | NamecheapCredentials;
 
 export interface DnsProvider {
   id: string;
@@ -263,7 +273,14 @@ export interface UpdateDnsProviderData {
 }
 
 // Error Page types
-export type ErrorPageType = "503" | "404" | "500" | "502" | "504" | "maintenance" | "custom";
+export type ErrorPageType =
+  | "503"
+  | "404"
+  | "500"
+  | "502"
+  | "504"
+  | "maintenance"
+  | "custom";
 
 export interface ErrorPage {
   id: string;
@@ -393,7 +410,12 @@ export interface ExtensionStatus {
 }
 
 // Site types
-export type SiteStatus = "active" | "building" | "deploying" | "error" | "disabled";
+export type SiteStatus =
+  | "active"
+  | "building"
+  | "deploying"
+  | "error"
+  | "disabled";
 export type SiteFramework = "nextjs" | "sveltekit" | "static" | "custom";
 export type SiteRenderMode = "ssr" | "ssg" | "hybrid";
 export type DeploymentSlot = "blue" | "green";
@@ -411,7 +433,7 @@ export interface Site {
   outputDirectory: string | null;
   installCommand: string | null;
   nodeVersion: string | null;
-  envVariables: Record<string, string>;
+  envVariables?: Record<string, string>;
   buildFlags: string[];
   runtimePath: string | null;
   entryPoint: string | null;
@@ -854,13 +876,17 @@ export interface UpdateSharedBackendData extends Partial<CreateSharedBackendData
 // Clustering Types
 // =============================================================================
 
-export type ClusterNodeStatus = "online" | "offline" | "syncing" | "error" | "unknown";
+export type ClusterNodeStatus =
+  | "online"
+  | "offline"
+  | "syncing"
+  | "error"
+  | "unknown";
 
 export interface ClusterNode {
   id: string;
   name: string;
   apiUrl: string;
-  apiKey: string;
   status: ClusterNodeStatus;
   lastSeenAt: string | null;
   lastSyncAt: string | null;
@@ -975,7 +1001,11 @@ export interface IpValidationResult {
 }
 
 // Domain Security Headers - X-Frame-Options, CSP, CORS configuration
-export type XFrameOptionsValue = "deny" | "sameorigin" | "allow-from" | "disabled";
+export type XFrameOptionsValue =
+  | "deny"
+  | "sameorigin"
+  | "allow-from"
+  | "disabled";
 
 export interface DomainSecurityHeaders {
   id: string;

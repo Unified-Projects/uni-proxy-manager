@@ -2,9 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { testClient } from "../setup/test-client";
 import { testDb, clearDatabase, closeTestDb } from "../setup/test-db";
 import { createSiteFixture, createTestZipFile } from "../setup/fixtures";
+import { clearRedisQueues, getQueueJobs } from "../setup/test-redis";
 import * as schema from "../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
 import archiver from "archiver";
+import { QUEUES, type SiteBuildJobData } from "@uni-proxy-manager/queue";
 
 async function createSiteZipFile(options: {
   framework?: "nextjs" | "sveltekit" | "static";
@@ -43,11 +45,33 @@ async function createSiteZipFile(options: {
   });
 }
 
+async function createPlainStaticZipFile(): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const chunks: Buffer[] = [];
+
+    archive.on("data", (chunk) => chunks.push(chunk));
+    archive.on("end", () => {
+      const buffer = Buffer.concat(chunks);
+      const blob = new Blob([buffer], { type: "application/zip" });
+      resolve(new File([blob], "plain-static.zip", { type: "application/zip" }));
+    });
+    archive.on("error", reject);
+
+    archive.append("<!doctype html><html><body>Hello static</body></html>", {
+      name: "index.html",
+    });
+    archive.append("body { background: white; }", { name: "styles.css" });
+    archive.finalize();
+  });
+}
+
 describe("Sites ZIP Upload API", () => {
   let testSiteId: string;
 
   beforeAll(async () => {
     await clearDatabase();
+    await clearRedisQueues();
   });
 
   afterAll(async () => {
@@ -56,6 +80,7 @@ describe("Sites ZIP Upload API", () => {
 
   beforeEach(async () => {
     await clearDatabase();
+    await clearRedisQueues();
     const siteData = createSiteFixture();
     const res = await testClient.post<{ site: any }>("/api/sites", siteData);
     testSiteId = res.body.site.id;
@@ -205,6 +230,44 @@ describe("Sites ZIP Upload API", () => {
 
       expect(res1.body.deployment.slot).toBe("blue");
       expect(res2.body.deployment.slot).toBe("green");
+    });
+
+    it("should clear implicit node commands for plain static uploads", async () => {
+      const staticSiteRes = await testClient.post<{ site: any }>(
+        "/api/sites",
+        createSiteFixture({
+          framework: "static",
+          renderMode: "ssg",
+          outputDirectory: "",
+        })
+      );
+      const staticSiteId = staticSiteRes.body.site.id;
+
+      const zipFile = await createPlainStaticZipFile();
+      const formData = new FormData();
+      formData.append("file", zipFile);
+
+      const response = await testClient.postForm<{ deployment: { id: string } }>(
+        `/api/sites/${staticSiteId}/upload`,
+        formData
+      );
+
+      expect(response.status).toBe(200);
+
+      const queuedJobs = await getQueueJobs<SiteBuildJobData>(QUEUES.SITE_BUILD);
+      const job = queuedJobs.find((queuedJob) => queuedJob.data.deploymentId === response.body.deployment.id);
+      expect(job).toBeDefined();
+      expect(job?.data.framework).toBe("static");
+      expect(job?.data.buildCommand).toBeUndefined();
+      expect(job?.data.installCommand).toBeUndefined();
+
+      const updatedSite = await testDb.query.sites.findFirst({
+        where: eq(schema.sites.id, staticSiteId),
+      });
+
+      expect(updatedSite?.framework).toBe("static");
+      expect(updatedSite?.buildCommand).toBeNull();
+      expect(updatedSite?.installCommand).toBeNull();
     });
   });
 });

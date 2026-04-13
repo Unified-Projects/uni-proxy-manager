@@ -97,7 +97,7 @@ export function AddNodeDialog({ open, onOpenChange }: AddNodeDialogProps) {
                   <FormControl>
                     <Input placeholder="http://192.168.1.10:3000" {...field} />
                   </FormControl>
-                  <FormDescription>Base URL of the remote UPM API (no trailing slash)</FormDescription>
+                  <FormDescription>Base origin of the remote UPM API. Use only the scheme, host, and port.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

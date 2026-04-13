@@ -256,10 +256,21 @@ export function getCorsConfig(): { enabled: boolean; origins: string[] } {
 
 export function getAuthConfig(): { enabled: boolean; apiKey: string } {
   const env = getEnv();
-  const apiKey = env.UNI_PROXY_MANAGER_API_KEY || "";
-  const enabled = env.UNI_PROXY_MANAGER_AUTH_ENABLED && apiKey.length > 0;
+  const apiKey = env.UNI_PROXY_MANAGER_API_KEY?.trim() || "";
 
-  if (enabled && apiKey.length < 32) {
+  if (!env.UNI_PROXY_MANAGER_AUTH_ENABLED) {
+    return { enabled: false, apiKey: "" };
+  }
+
+  if (!apiKey) {
+    throw new Error(
+      "[Security] UNI_PROXY_MANAGER_AUTH_ENABLED is true but UNI_PROXY_MANAGER_API_KEY is not set. " +
+      "Set UNI_PROXY_MANAGER_API_KEY to a value with 32 or more characters, " +
+      "or explicitly disable auth by setting UNI_PROXY_MANAGER_AUTH_ENABLED=false."
+    );
+  }
+
+  if (apiKey.length < 32) {
     console.warn(
       "[Security] API key is less than 32 characters. A minimum of 32 characters is required for security."
     );
@@ -270,7 +281,7 @@ export function getAuthConfig(): { enabled: boolean; apiKey: string } {
     );
   }
 
-  return { enabled, apiKey };
+  return { enabled: true, apiKey };
 }
 
 export function getStatsConfig(): { user: string; password: string | undefined } {

@@ -179,6 +179,7 @@ describe("Sites Extension Job Types", () => {
         deploymentId: "deploy-456",
         targetSlot: "green",
         artifactPath: "artifact.tar.gz",
+        renderMode: "ssr",
         runtimeConfig: {
           cpus: 2,
           memoryMb: 1024,
@@ -188,6 +189,7 @@ describe("Sites Extension Job Types", () => {
         runtimePath: ".next/standalone",
       };
 
+      expect(jobData.renderMode).toBe("ssr");
       expect(jobData.entryPoint).toBe("server.js");
       expect(jobData.runtimePath).toBe(".next/standalone");
     });

@@ -127,15 +127,18 @@ export function useAnalyticsUTM(configId: string, params?: AnalyticsQueryParams)
   });
 }
 
-export function useAnalyticsLive(configId: string) {
+export function useAnalyticsLive(
+  configId: string,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
   return useQuery({
     queryKey: analyticsDataKeys.live(configId),
     queryFn: async () => {
       const response = await analyticsDataApi.getLive(configId);
       return response;
     },
-    enabled: !!configId,
-    refetchInterval: 5000,
+    enabled: !!configId && (options?.enabled ?? true),
+    refetchInterval: options?.refetchInterval ?? 5000,
   });
 }
 

@@ -10,6 +10,10 @@ import {
 import { QUEUES } from "../../../packages/queue/src/queues";
 import * as schema from "../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
+import { access, mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { getCertsDir } from "@uni-proxy-manager/shared/config";
+import { join } from "path";
+import { tmpdir } from "os";
 
 describe("Certificates API", () => {
   let testDomainId: string;
@@ -252,6 +256,52 @@ describe("Certificates API", () => {
       expect(response.status).toBe(200);
       expect(response.body.certificate.autoRenew).toBe(false);
       expect(response.body.certificate.renewBeforeDays).toBe(14);
+      expect(response.body.reissueQueued).toBe(false);
+    });
+
+    it("should update alt names and queue reissue on the same certificate record", async () => {
+      const certData = createCertificateRequestFixture(
+        testDomainId,
+        testDnsProviderId
+      );
+      const createRes = await testClient.post<{ certificate: any }>(
+        "/api/certificates",
+        certData
+      );
+      const certId = createRes.body.certificate.id;
+
+      await clearRedisQueues();
+
+      const response = await testClient.put<{ certificate: any; reissueQueued: boolean }>(
+        `/api/certificates/${certId}`,
+        {
+          altNames: ["www.example.com", "api.example.com"],
+        }
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.certificate.id).toBe(certId);
+      expect(response.body.certificate.altNames).toEqual(["www.example.com", "api.example.com"]);
+      expect(response.body.certificate.status).toBe("pending");
+      expect(response.body.reissueQueued).toBe(true);
+
+      const updatedDomain = await testDb.query.domains.findFirst({
+        where: eq(schema.domains.id, testDomainId),
+      });
+      expect(updatedDomain?.certificateId).toBe(certId);
+
+      const jobs = await getQueueJobs<{
+        certificateId: string;
+        domainId: string;
+        dnsProviderId?: string;
+        forceRenewal?: boolean;
+      }>(QUEUES.CERTIFICATE_RENEWAL);
+
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].data.certificateId).toBe(certId);
+      expect(jobs[0].data.domainId).toBe(testDomainId);
+      expect(jobs[0].data.dnsProviderId).toBe(testDnsProviderId);
+      expect(jobs[0].data.forceRenewal).toBe(true);
     });
 
     it("should validate renewBeforeDays range", async () => {
@@ -316,6 +366,57 @@ describe("Certificates API", () => {
       );
 
       expect(response.status).toBe(404);
+    });
+
+    it("should delete managed certificate directories under the cert volume", async () => {
+      const managedDirName = `${testDomainId}-managed`;
+      const managedDir = join(getCertsDir(), managedDirName);
+
+      await mkdir(managedDir, { recursive: true });
+      await writeFile(join(managedDir, "cert.pem"), "test-cert");
+
+      await testDb.insert(schema.certificates).values({
+        id: "managed-cert-delete",
+        domainId: testDomainId,
+        commonName: "managed.example.com",
+        source: "manual",
+        status: "active",
+        certPath: `${managedDirName}/cert.pem`,
+      });
+
+      const response = await testClient.delete<{ success: boolean }>(
+        "/api/certificates/managed-cert-delete"
+      );
+
+      expect(response.status).toBe(200);
+      await expect(access(managedDir)).rejects.toThrow();
+    });
+
+    it("should not delete unmanaged absolute certificate directories", async () => {
+      const outsideDir = await mkdtemp(join(tmpdir(), "upm-cert-"));
+
+      try {
+        const outsideCertPath = join(outsideDir, "cert.pem");
+        await writeFile(outsideCertPath, "outside-cert");
+
+        await testDb.insert(schema.certificates).values({
+          id: "outside-cert-delete",
+          domainId: testDomainId,
+          commonName: "outside.example.com",
+          source: "manual",
+          status: "active",
+          certPath: outsideCertPath,
+        });
+
+        const response = await testClient.delete<{ success: boolean }>(
+          "/api/certificates/outside-cert-delete"
+        );
+
+        expect(response.status).toBe(200);
+        await expect(access(outsideDir)).resolves.toBeUndefined();
+      } finally {
+        await rm(outsideDir, { recursive: true, force: true });
+      }
     });
   });
 });

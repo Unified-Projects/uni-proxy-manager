@@ -12,10 +12,46 @@ import * as tar from "tar";
 import { mkdir, rm, stat, readdir, readFile, rename, copyFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { getOpenRuntimesClient, isOpenRuntimesConfigured } from "@uni-proxy-manager/shared/openruntimes";
+import { QUEUES, type SiteBuildJobData } from "@uni-proxy-manager/queue";
 
 const SITES_SOURCE_DIR = process.env.SITES_SOURCE_DIR || "/data/sites/sources";
+const DEFAULT_BUILD_COMMAND = "npm run build";
+const DEFAULT_INSTALL_COMMAND = "npm install";
 
 const app = new Hono();
+
+function trimCommand(command?: string | null): string | undefined {
+  const trimmed = command?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function stripImplicitStaticCommand(
+  command: string | undefined,
+  defaultCommand: string
+): string | undefined {
+  return command === defaultCommand ? undefined : command;
+}
+
+function getQueuedBuildCommands(site: {
+  framework: "nextjs" | "sveltekit" | "static" | "custom";
+  buildCommand?: string | null;
+  installCommand?: string | null;
+}): Pick<SiteBuildJobData, "buildCommand" | "installCommand"> {
+  const buildCommand = trimCommand(site.buildCommand);
+  const installCommand = trimCommand(site.installCommand);
+
+  if (site.framework === "static") {
+    return {
+      buildCommand: stripImplicitStaticCommand(buildCommand, DEFAULT_BUILD_COMMAND),
+      installCommand: stripImplicitStaticCommand(installCommand, DEFAULT_INSTALL_COMMAND),
+    };
+  }
+
+  return {
+    buildCommand: buildCommand || DEFAULT_BUILD_COMMAND,
+    installCommand: installCommand || DEFAULT_INSTALL_COMMAND,
+  };
+}
 
 // Validation schemas
 const createSiteSchema = z.object({
@@ -55,6 +91,13 @@ const updateSiteSchema = createSiteSchema.partial().extend({
 const updateEnvSchema = z.object({
   envVariables: z.record(z.string()),
 });
+
+function sanitizeSiteResponse<T extends { envVariables?: Record<string, string> | null }>(
+  site: T
+): Omit<T, "envVariables"> {
+  const { envVariables: _envVariables, ...sanitized } = site;
+  return sanitized;
+}
 
 /**
  * GET /api/sites
@@ -104,7 +147,7 @@ app.get("/", async (c) => {
         });
 
         return {
-          ...site,
+          ...sanitizeSiteResponse(site),
           latestDeployment,
           deploymentSummary,
           domains,
@@ -152,7 +195,7 @@ app.get("/:id", async (c) => {
 
     return c.json({
       site: {
-        ...site,
+        ...sanitizeSiteResponse(site),
         deployments: siteDeployments,
         domains,
         githubConnection: github,
@@ -217,6 +260,9 @@ app.post("/", zValidator("json", createSiteSchema), async (c) => {
         status: "disabled",
       })
       .returning();
+    if (!newSite) {
+      throw new Error("Site insert did not return a row.");
+    }
 
     // Create siteDomain record if productionDomainId is provided
     if (data.productionDomainId) {
@@ -229,7 +275,7 @@ app.post("/", zValidator("json", createSiteSchema), async (c) => {
       });
     }
 
-    return c.json({ site: newSite }, 201);
+    return c.json({ site: sanitizeSiteResponse(newSite) }, 201);
   } catch (error) {
     console.error("[Sites] Error creating site:", error);
     return c.json({ error: "Failed to create site" }, 500);
@@ -271,6 +317,9 @@ app.put("/:id", zValidator("json", updateSiteSchema), async (c) => {
       })
       .where(eq(sites.id, id))
       .returning();
+    if (!updatedSite) {
+      throw new Error("Site update did not return a row.");
+    }
 
     // Handle productionDomainId change - create/update siteDomain record
     if (data.productionDomainId !== undefined && data.productionDomainId !== existing.productionDomainId) {
@@ -314,7 +363,7 @@ app.put("/:id", zValidator("json", updateSiteSchema), async (c) => {
       }
     }
 
-    return c.json({ site: updatedSite });
+    return c.json({ site: sanitizeSiteResponse(updatedSite) });
   } catch (error) {
     console.error("[Sites] Error updating site:", error);
     return c.json({ error: "Failed to update site" }, 500);
@@ -457,7 +506,8 @@ app.post("/:id/deploy", async (c) => {
     // Queue build job
     try {
       const redis = getRedisClient();
-      const queue = new Queue("site-build", { connection: redis });
+      const queue = new Queue(QUEUES.SITE_BUILD, { connection: redis });
+      const queuedCommands = getQueuedBuildCommands(site);
 
       await queue.add(
         `build-${deploymentId}`,
@@ -467,8 +517,8 @@ app.post("/:id/deploy", async (c) => {
           commitSha: useGitHub ? github.lastCommitSha : undefined,
           branch,
           envVariables: site.envVariables || {},
-          buildCommand: site.buildCommand || "npm run build",
-          installCommand: site.installCommand || "npm install",
+          buildCommand: queuedCommands.buildCommand,
+          installCommand: queuedCommands.installCommand,
           nodeVersion: site.nodeVersion || "20",
           framework: site.framework,
           sourcePath: !useGitHub ? siteSourceDir : undefined,
@@ -581,11 +631,14 @@ app.post("/:id/rollback/:deploymentId", async (c) => {
           deploymentId: newDeploymentId,
           targetSlot,
           artifactPath: targetDeployment.artifactPath,
+          renderMode: site.renderMode || undefined,
           runtimeConfig: {
             cpus: parseFloat(site.cpuLimit || "0.5"),
             memoryMb: site.memoryMb,
             timeout: site.timeoutSeconds,
           },
+          entryPoint: site.entryPoint || undefined,
+          runtimePath: site.runtimePath || undefined,
         },
         { jobId: `site-deploy-${newDeploymentId}` }
       );
@@ -816,34 +869,47 @@ app.post("/:id/upload", async (c) => {
     }
 
     let detectedFramework = site.framework;
-    let detectedBuildCommand = site.buildCommand;
-    const detectedInstallCommand = site.installCommand;
+    let detectedBuildCommand = trimCommand(site.buildCommand);
+    let detectedInstallCommand = trimCommand(site.installCommand);
+    let packageHasBuildScript = false;
 
     try {
       const packageJsonPath = join(siteSourceDir, "package.json");
       const packageJsonContent = await readFile(packageJsonPath, "utf-8");
       const packageJson = JSON.parse(packageJsonContent);
+      packageHasBuildScript = !!packageJson.scripts?.build;
 
       if (packageJson.dependencies?.next || packageJson.devDependencies?.next) {
         detectedFramework = "nextjs";
-        detectedBuildCommand = detectedBuildCommand || "npm run build";
+        detectedBuildCommand = detectedBuildCommand || DEFAULT_BUILD_COMMAND;
+        detectedInstallCommand = detectedInstallCommand || DEFAULT_INSTALL_COMMAND;
       } else if (
         packageJson.dependencies?.["@sveltejs/kit"] ||
         packageJson.devDependencies?.["@sveltejs/kit"]
       ) {
         detectedFramework = "sveltekit";
-        detectedBuildCommand = detectedBuildCommand || "npm run build";
+        detectedBuildCommand = detectedBuildCommand || DEFAULT_BUILD_COMMAND;
+        detectedInstallCommand = detectedInstallCommand || DEFAULT_INSTALL_COMMAND;
       } else {
-        // Has package.json but no known framework - could be a custom or static site
-        detectedFramework = "static";
+        // Preserve explicitly configured custom runtimes; otherwise fall back to static.
+        detectedFramework = site.framework === "custom" ? "custom" : "static";
       }
 
-      if (packageJson.scripts?.build && !site.buildCommand) {
-        detectedBuildCommand = "npm run build";
+      if (packageHasBuildScript) {
+        detectedBuildCommand = detectedBuildCommand || DEFAULT_BUILD_COMMAND;
+        detectedInstallCommand = detectedInstallCommand || DEFAULT_INSTALL_COMMAND;
       }
     } catch {
-      // No package.json or invalid JSON - treat as static site
-      detectedFramework = "static";
+      // No package.json or invalid JSON - preserve custom runtimes, otherwise treat as static.
+      detectedFramework = site.framework === "custom" ? "custom" : "static";
+    }
+
+    if (detectedFramework === "static" && !packageHasBuildScript) {
+      detectedBuildCommand = stripImplicitStaticCommand(detectedBuildCommand, DEFAULT_BUILD_COMMAND);
+      detectedInstallCommand = stripImplicitStaticCommand(
+        detectedInstallCommand,
+        DEFAULT_INSTALL_COMMAND
+      );
     }
 
     const latestDeployment = await db.query.deployments.findFirst({
@@ -874,15 +940,15 @@ app.post("/:id/upload", async (c) => {
       .set({
         status: "building",
         framework: detectedFramework,
-        buildCommand: detectedBuildCommand || "npm run build",
-        installCommand: detectedInstallCommand || "npm install",
+        buildCommand: detectedBuildCommand ?? null,
+        installCommand: detectedInstallCommand ?? null,
         updatedAt: new Date(),
       })
       .where(eq(sites.id, id));
 
     try {
       const redis = getRedisClient();
-      const queue = new Queue("site-build", { connection: redis });
+      const queue = new Queue(QUEUES.SITE_BUILD, { connection: redis });
 
       await queue.add(
         `build-${deploymentId}`,
@@ -891,8 +957,8 @@ app.post("/:id/upload", async (c) => {
           deploymentId,
           branch: "upload",
           envVariables: site.envVariables || {},
-          buildCommand: detectedBuildCommand || site.buildCommand || "npm run build",
-          installCommand: detectedInstallCommand || site.installCommand || "npm install",
+          buildCommand: detectedBuildCommand,
+          installCommand: detectedInstallCommand,
           nodeVersion: site.nodeVersion || "22",
           framework: detectedFramework,
           // Pass direct tar.gz path if available, otherwise extracted source dir

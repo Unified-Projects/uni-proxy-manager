@@ -93,14 +93,17 @@ class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public code?: string
+    public code?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+async function fetchApi<T>(
+  endpoint: string,
+  options: FetchOptions = {},
+): Promise<T> {
   const { params, ...fetchOptions } = options;
 
   let url = endpoint;
@@ -128,11 +131,13 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Unknown error" }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
     throw new ApiError(
       error.error || error.message || `HTTP ${response.status}`,
       response.status,
-      error.code
+      error.code,
     );
   }
 
@@ -168,11 +173,13 @@ async function uploadFile<T>(endpoint: string, file: File): Promise<T> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Upload failed" }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Upload failed" }));
     throw new ApiError(
       error.error || error.message || `HTTP ${response.status}`,
       response.status,
-      error.code
+      error.code,
     );
   }
 
@@ -228,21 +235,29 @@ export const certificatesApi = {
     fetchApi<{ certificates: Certificate[] }>("/api/certificates", {
       params: { domainId },
     }),
-  get: (id: string) => fetchApi<{ certificate: Certificate }>(`/api/certificates/${id}`),
+  get: (id: string) =>
+    fetchApi<{ certificate: Certificate }>(`/api/certificates/${id}`),
   request: (data: RequestCertificateData) =>
     fetchApi<{ certificate: Certificate }>("/api/certificates", {
       method: "POST",
       body: JSON.stringify(data),
     }),
   update: (id: string, data: UpdateCertificateData) =>
-    fetchApi<{ certificate: Certificate }>(`/api/certificates/${id}`, {
+    fetchApi<{
+      certificate: Certificate;
+      reissueQueued?: boolean;
+      message?: string;
+    }>(`/api/certificates/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
     }),
   renew: (id: string) =>
-    fetchApi<{ success: boolean; certificate: Certificate }>(`/api/certificates/${id}/renew`, {
-      method: "POST",
-    }),
+    fetchApi<{ success: boolean; certificate?: Certificate; message?: string }>(
+      `/api/certificates/${id}/renew`,
+      {
+        method: "POST",
+      },
+    ),
   delete: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/certificates/${id}`, {
       method: "DELETE",
@@ -252,7 +267,8 @@ export const certificatesApi = {
 // DNS Provider APIs
 export const dnsProvidersApi = {
   list: () => fetchApi<{ providers: DnsProvider[] }>("/api/dns-providers"),
-  get: (id: string) => fetchApi<{ provider: DnsProvider }>(`/api/dns-providers/${id}`),
+  get: (id: string) =>
+    fetchApi<{ provider: DnsProvider }>(`/api/dns-providers/${id}`),
   create: (data: CreateDnsProviderData) =>
     fetchApi<{ provider: DnsProvider }>("/api/dns-providers", {
       method: "POST",
@@ -264,9 +280,12 @@ export const dnsProvidersApi = {
       body: JSON.stringify(data),
     }),
   test: (id: string) =>
-    fetchApi<{ success: boolean; message?: string }>(`/api/dns-providers/${id}/test`, {
-      method: "POST",
-    }),
+    fetchApi<{ success: boolean; message?: string }>(
+      `/api/dns-providers/${id}/test`,
+      {
+        method: "POST",
+      },
+    ),
   setDefault: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/dns-providers/${id}/default`, {
       method: "POST",
@@ -280,7 +299,8 @@ export const dnsProvidersApi = {
 // Error Page APIs
 export const errorPagesApi = {
   list: () => fetchApi<{ errorPages: ErrorPage[] }>("/api/error-pages"),
-  get: (id: string) => fetchApi<{ errorPage: ErrorPage }>(`/api/error-pages/${id}`),
+  get: (id: string) =>
+    fetchApi<{ errorPage: ErrorPage }>(`/api/error-pages/${id}`),
   create: (data: CreateErrorPageData) =>
     fetchApi<{ errorPage: ErrorPage }>("/api/error-pages", {
       method: "POST",
@@ -300,7 +320,7 @@ export const errorPagesApi = {
 export const maintenanceApi = {
   getStatus: (domainId: string) =>
     fetchApi<{ maintenanceEnabled: boolean; bypassIps: string[] }>(
-      `/api/maintenance/domains/${domainId}`
+      `/api/maintenance/domains/${domainId}`,
     ),
   enable: (domainId: string, data?: EnableMaintenanceData) =>
     fetchApi<{ success: boolean; window: MaintenanceWindow }>(
@@ -308,17 +328,23 @@ export const maintenanceApi = {
       {
         method: "POST",
         body: JSON.stringify(data || {}),
-      }
+      },
     ),
   disable: (domainId: string) =>
-    fetchApi<{ success: boolean }>(`/api/maintenance/domains/${domainId}/disable`, {
-      method: "POST",
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/maintenance/domains/${domainId}/disable`,
+      {
+        method: "POST",
+      },
+    ),
   updateBypassIps: (domainId: string, bypassIps: string[]) =>
-    fetchApi<{ success: boolean }>(`/api/maintenance/domains/${domainId}/bypass-ips`, {
-      method: "PUT",
-      body: JSON.stringify({ bypassIps }),
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/maintenance/domains/${domainId}/bypass-ips`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ bypassIps }),
+      },
+    ),
   // Maintenance windows
   listWindows: (options?: { domainId?: string; active?: boolean }) =>
     fetchApi<{ windows: MaintenanceWindow[] }>("/api/maintenance/windows", {
@@ -368,12 +394,17 @@ export const statsApi = {
 // Config API
 export const configApi = {
   getAcme: () =>
-    fetchApi<{ email: string; staging: boolean; directoryUrl: string }>("/api/config/acme"),
+    fetchApi<{ email: string; staging: boolean; directoryUrl: string }>(
+      "/api/config/acme",
+    ),
   updateAcme: (data: { email: string }) =>
-    fetchApi<{ success: boolean; message: string; email: string }>("/api/config/acme", {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ success: boolean; message: string; email: string }>(
+      "/api/config/acme",
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
 };
 
 // =============================================================================
@@ -404,9 +435,12 @@ export const sitesApi = {
       method: "DELETE",
     }),
   deploy: (id: string) =>
-    fetchApi<{ deployment: Deployment; message: string }>(`/api/sites/${id}/deploy`, {
-      method: "POST",
-    }),
+    fetchApi<{ deployment: Deployment; message: string }>(
+      `/api/sites/${id}/deploy`,
+      {
+        method: "POST",
+      },
+    ),
   uploadDeploy: async (id: string, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -415,17 +449,27 @@ export const sitesApi = {
       body: formData,
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "Upload failed" }));
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Upload failed" }));
       throw new Error(error.error || "Upload failed");
     }
-    return response.json() as Promise<{ deployment: Deployment; message: string }>;
+    return response.json() as Promise<{
+      deployment: Deployment;
+      message: string;
+    }>;
   },
   rollback: (siteId: string, deploymentId: string) =>
-    fetchApi<{ deployment: Deployment; message: string }>(`/api/sites/${siteId}/rollback/${deploymentId}`, {
-      method: "POST",
-    }),
+    fetchApi<{ deployment: Deployment; message: string }>(
+      `/api/sites/${siteId}/rollback/${deploymentId}`,
+      {
+        method: "POST",
+      },
+    ),
   getEnv: (id: string) =>
-    fetchApi<{ envVariables: Record<string, string>; count: number }>(`/api/sites/${id}/env`),
+    fetchApi<{ envVariables: Record<string, string>; count: number }>(
+      `/api/sites/${id}/env`,
+    ),
   updateEnv: (id: string, envVariables: Record<string, string>) =>
     fetchApi<{ success: boolean; count: number }>(`/api/sites/${id}/env`, {
       method: "PUT",
@@ -439,50 +483,78 @@ export const deploymentsApi = {
     fetchApi<{ deployments: Deployment[] }>("/api/deployments", {
       params: { siteId },
     }),
-  get: (id: string) => fetchApi<{ deployment: Deployment }>(`/api/deployments/${id}`),
+  get: (id: string) =>
+    fetchApi<{ deployment: Deployment }>(`/api/deployments/${id}`),
   getLogs: (id: string) =>
-    fetchApi<{ logs: string; status: string; complete: boolean }>(`/api/deployments/${id}/logs`),
+    fetchApi<{ logs: string; status: string; complete: boolean }>(
+      `/api/deployments/${id}/logs`,
+    ),
   cancel: (id: string) =>
-    fetchApi<{ deployment: Deployment; message: string }>(`/api/deployments/${id}/cancel`, {
-      method: "POST",
-    }),
+    fetchApi<{ deployment: Deployment; message: string }>(
+      `/api/deployments/${id}/cancel`,
+      {
+        method: "POST",
+      },
+    ),
   promote: (id: string) =>
-    fetchApi<{ deployment: Deployment; message: string }>(`/api/deployments/${id}/promote`, {
-      method: "POST",
-    }),
+    fetchApi<{ deployment: Deployment; message: string }>(
+      `/api/deployments/${id}/promote`,
+      {
+        method: "POST",
+      },
+    ),
   retry: (id: string) =>
-    fetchApi<{ message: string; deploymentId: string }>(`/api/deployments/${id}/retry`, {
-      method: "POST",
-    }),
+    fetchApi<{ message: string; deploymentId: string }>(
+      `/api/deployments/${id}/retry`,
+      {
+        method: "POST",
+      },
+    ),
   redeploy: (id: string) =>
-    fetchApi<{ message: string; deploymentId: string }>(`/api/deployments/${id}/redeploy`, {
-      method: "POST",
-    }),
+    fetchApi<{ message: string; deploymentId: string }>(
+      `/api/deployments/${id}/redeploy`,
+      {
+        method: "POST",
+      },
+    ),
   delete: (id: string) =>
-    fetchApi<{ message: string; deploymentId: string }>(`/api/deployments/${id}`, {
-      method: "DELETE",
-    }),
+    fetchApi<{ message: string; deploymentId: string }>(
+      `/api/deployments/${id}`,
+      {
+        method: "DELETE",
+      },
+    ),
   getPreview: (id: string) =>
-    fetchApi<{ previewUrl: string; deploymentId: string }>(`/api/deployments/${id}/preview`),
+    fetchApi<{ previewUrl: string; deploymentId: string }>(
+      `/api/deployments/${id}/preview`,
+    ),
   generatePreview: (id: string) =>
-    fetchApi<{ message: string; deploymentId: string }>(`/api/deployments/${id}/generate-preview`, {
-      method: "POST",
-    }),
+    fetchApi<{ message: string; deploymentId: string }>(
+      `/api/deployments/${id}/generate-preview`,
+      {
+        method: "POST",
+      },
+    ),
   // SSE endpoint for streaming logs
   streamLogsUrl: (id: string) => `/api/deployments/${id}/logs`,
 };
 
 // GitHub API
 export const githubApi = {
-  status: () => fetchApi<{ configured: boolean; appSlug: string }>("/api/github/status"),
+  status: () =>
+    fetchApi<{ configured: boolean; appSlug: string }>("/api/github/status"),
   getInstallUrl: (siteId?: string) =>
     fetchApi<{ installUrl: string }>("/api/github/install", {
       params: { siteId },
     }),
   listRepositories: (installationId: number) =>
-    fetchApi<{ repositories: GitHubRepository[] }>(`/api/github/installations/${installationId}/repositories`),
+    fetchApi<{ repositories: GitHubRepository[] }>(
+      `/api/github/installations/${installationId}/repositories`,
+    ),
   getSiteConnection: (siteId: string) =>
-    fetchApi<{ connected: boolean; connection?: GitHubConnection }>(`/api/github/sites/${siteId}`),
+    fetchApi<{ connected: boolean; connection?: GitHubConnection }>(
+      `/api/github/sites/${siteId}`,
+    ),
   connect: (siteId: string, data: ConnectGitHubData) =>
     fetchApi<{ connection: GitHubConnection }>(`/api/github/sites/${siteId}`, {
       method: "POST",
@@ -498,9 +570,14 @@ export const githubApi = {
       method: "DELETE",
     }),
   listBranches: (siteId: string) =>
-    fetchApi<{ branches: GitHubBranch[] }>(`/api/github/sites/${siteId}/branches`),
+    fetchApi<{ branches: GitHubBranch[] }>(
+      `/api/github/sites/${siteId}/branches`,
+    ),
   sync: (siteId: string) =>
-    fetchApi<{ synced: boolean; latestCommit: { sha: string; message: string } }>(`/api/github/sites/${siteId}/sync`, {
+    fetchApi<{
+      synced: boolean;
+      latestCommit: { sha: string; message: string };
+    }>(`/api/github/sites/${siteId}/sync`, {
       method: "POST",
     }),
 };
@@ -517,19 +594,31 @@ export const siteAnalyticsApi = {
     fetchApi<SiteAnalyticsSummary>(`/api/site-analytics/${siteId}`, {
       params: options,
     }),
-  getVisitors: (siteId: string, options?: { start?: string; end?: string; interval?: string }) =>
-    fetchApi<{ data: VisitorDataPoint[] }>(`/api/site-analytics/${siteId}/visitors`, {
-      params: options,
-    }),
+  getVisitors: (
+    siteId: string,
+    options?: { start?: string; end?: string; interval?: string },
+  ) =>
+    fetchApi<{ data: VisitorDataPoint[] }>(
+      `/api/site-analytics/${siteId}/visitors`,
+      {
+        params: options,
+      },
+    ),
   getGeography: (siteId: string, options?: { start?: string; end?: string }) =>
     fetchApi<GeographyData>(`/api/site-analytics/${siteId}/geography`, {
       params: options,
     }),
-  getReferrers: (siteId: string, options?: { start?: string; end?: string; limit?: string }) =>
+  getReferrers: (
+    siteId: string,
+    options?: { start?: string; end?: string; limit?: string },
+  ) =>
     fetchApi<ReferrerData>(`/api/site-analytics/${siteId}/referrers`, {
       params: options,
     }),
-  getPages: (siteId: string, options?: { start?: string; end?: string; limit?: string }) =>
+  getPages: (
+    siteId: string,
+    options?: { start?: string; end?: string; limit?: string },
+  ) =>
     fetchApi<PageData>(`/api/site-analytics/${siteId}/pages`, {
       params: options,
     }),
@@ -541,20 +630,39 @@ export const siteAnalyticsApi = {
   realtimeUrl: (siteId: string) => `/api/site-analytics/${siteId}/realtime`,
 
   // Domain Analytics API
-  getDomainSummary: (domainId: string, options?: { start?: string; end?: string }) =>
-    fetchApi<DomainAnalyticsSummary>(`/api/site-analytics/domains/${domainId}`, {
-      params: options,
-    }),
-  getDomainVisitors: (domainId: string, options?: { start?: string; end?: string; interval?: string }) =>
-    fetchApi<{ data: VisitorDataPoint[] }>(`/api/site-analytics/domains/${domainId}/visitors`, {
-      params: options,
-    }),
-  getDomainGeography: (domainId: string, options?: { start?: string; end?: string }) =>
-    fetchApi<GeographyData>(`/api/site-analytics/domains/${domainId}/geography`, {
-      params: options,
-    }),
+  getDomainSummary: (
+    domainId: string,
+    options?: { start?: string; end?: string },
+  ) =>
+    fetchApi<DomainAnalyticsSummary>(
+      `/api/site-analytics/domains/${domainId}`,
+      {
+        params: options,
+      },
+    ),
+  getDomainVisitors: (
+    domainId: string,
+    options?: { start?: string; end?: string; interval?: string },
+  ) =>
+    fetchApi<{ data: VisitorDataPoint[] }>(
+      `/api/site-analytics/domains/${domainId}/visitors`,
+      {
+        params: options,
+      },
+    ),
+  getDomainGeography: (
+    domainId: string,
+    options?: { start?: string; end?: string },
+  ) =>
+    fetchApi<GeographyData>(
+      `/api/site-analytics/domains/${domainId}/geography`,
+      {
+        params: options,
+      },
+    ),
   // SSE endpoint for real-time domain visitors
-  domainRealtimeUrl: (domainId: string) => `/api/site-analytics/domains/${domainId}/realtime`,
+  domainRealtimeUrl: (domainId: string) =>
+    `/api/site-analytics/domains/${domainId}/realtime`,
 };
 
 // Domain Analytics types
@@ -579,7 +687,8 @@ export interface DomainAnalyticsSummary {
 // S3 Providers API
 export const s3ProvidersApi = {
   list: () => fetchApi<{ providers: S3Provider[] }>("/api/s3-providers"),
-  get: (id: string) => fetchApi<{ provider: S3Provider }>(`/api/s3-providers/${id}`),
+  get: (id: string) =>
+    fetchApi<{ provider: S3Provider }>(`/api/s3-providers/${id}`),
   create: (data: CreateS3ProviderData) =>
     fetchApi<{ provider: S3Provider }>("/api/s3-providers", {
       method: "POST",
@@ -595,15 +704,20 @@ export const s3ProvidersApi = {
       method: "DELETE",
     }),
   test: (id: string) =>
-    fetchApi<{ success: boolean; message?: string; error?: string }>(`/api/s3-providers/${id}/test`, {
-      method: "POST",
-    }),
+    fetchApi<{ success: boolean; message?: string; error?: string }>(
+      `/api/s3-providers/${id}/test`,
+      {
+        method: "POST",
+      },
+    ),
   setDefault: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/s3-providers/${id}/set-default`, {
       method: "POST",
     }),
   getUsage: (id: string) =>
-    fetchApi<{ usage: { totalObjects: number; totalSize: number; lastModified?: string } }>(`/api/s3-providers/${id}/usage`),
+    fetchApi<{
+      usage: { totalObjects: number; totalSize: number; lastModified?: string };
+    }>(`/api/s3-providers/${id}/usage`),
 };
 
 // System Config API
@@ -625,33 +739,53 @@ export interface HaproxyWatchdogConfig {
 }
 
 export const systemConfigApi = {
-  getAll: () => fetchApi<{ config: Record<string, unknown> }>("/api/system-config"),
-  getRetention: () => fetchApi<{ retention: RetentionConfig }>("/api/system-config/retention"),
+  getAll: () =>
+    fetchApi<{ config: Record<string, unknown> }>("/api/system-config"),
+  getRetention: () =>
+    fetchApi<{ retention: RetentionConfig }>("/api/system-config/retention"),
   updateRetention: (data: RetentionConfig) =>
     fetchApi<{ retention: RetentionConfig }>("/api/system-config/retention", {
       method: "PUT",
       body: JSON.stringify(data),
     }),
   resetRetention: () =>
-    fetchApi<{ retention: RetentionConfig }>("/api/system-config/retention/reset", {
-      method: "POST",
-    }),
-  getBuildDefaults: () => fetchApi<{ buildDefaults: BuildDefaultsConfig }>("/api/system-config/build-defaults"),
+    fetchApi<{ retention: RetentionConfig }>(
+      "/api/system-config/retention/reset",
+      {
+        method: "POST",
+      },
+    ),
+  getBuildDefaults: () =>
+    fetchApi<{ buildDefaults: BuildDefaultsConfig }>(
+      "/api/system-config/build-defaults",
+    ),
   updateBuildDefaults: (data: BuildDefaultsConfig) =>
-    fetchApi<{ buildDefaults: BuildDefaultsConfig }>("/api/system-config/build-defaults", {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ buildDefaults: BuildDefaultsConfig }>(
+      "/api/system-config/build-defaults",
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
   resetBuildDefaults: () =>
-    fetchApi<{ buildDefaults: BuildDefaultsConfig }>("/api/system-config/build-defaults/reset", {
-      method: "POST",
-    }),
-  getHaproxyWatchdog: () => fetchApi<{ watchdog: HaproxyWatchdogConfig }>("/api/system-config/haproxy-watchdog"),
+    fetchApi<{ buildDefaults: BuildDefaultsConfig }>(
+      "/api/system-config/build-defaults/reset",
+      {
+        method: "POST",
+      },
+    ),
+  getHaproxyWatchdog: () =>
+    fetchApi<{ watchdog: HaproxyWatchdogConfig }>(
+      "/api/system-config/haproxy-watchdog",
+    ),
   updateHaproxyWatchdog: (data: HaproxyWatchdogConfig) =>
-    fetchApi<{ watchdog: HaproxyWatchdogConfig }>("/api/system-config/haproxy-watchdog", {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ watchdog: HaproxyWatchdogConfig }>(
+      "/api/system-config/haproxy-watchdog",
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
 };
 
 // =============================================================================
@@ -661,27 +795,40 @@ export const systemConfigApi = {
 // Pomerium Identity Providers API
 export const pomeriumIdpsApi = {
   list: () =>
-    fetchApi<{ identityProviders: PomeriumIdentityProvider[] }>("/api/pomerium/idps"),
+    fetchApi<{ identityProviders: PomeriumIdentityProvider[] }>(
+      "/api/pomerium/idps",
+    ),
   get: (id: string) =>
-    fetchApi<{ identityProvider: PomeriumIdentityProvider }>(`/api/pomerium/idps/${id}`),
+    fetchApi<{ identityProvider: PomeriumIdentityProvider }>(
+      `/api/pomerium/idps/${id}`,
+    ),
   create: (data: CreatePomeriumIdpData) =>
-    fetchApi<{ identityProvider: PomeriumIdentityProvider }>("/api/pomerium/idps", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ identityProvider: PomeriumIdentityProvider }>(
+      "/api/pomerium/idps",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    ),
   update: (id: string, data: UpdatePomeriumIdpData) =>
-    fetchApi<{ identityProvider: PomeriumIdentityProvider }>(`/api/pomerium/idps/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ identityProvider: PomeriumIdentityProvider }>(
+      `/api/pomerium/idps/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
   delete: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/pomerium/idps/${id}`, {
       method: "DELETE",
     }),
   test: (id: string) =>
-    fetchApi<{ success: boolean; message?: string }>(`/api/pomerium/idps/${id}/test`, {
-      method: "POST",
-    }),
+    fetchApi<{ success: boolean; message?: string }>(
+      `/api/pomerium/idps/${id}/test`,
+      {
+        method: "POST",
+      },
+    ),
 };
 
 // Pomerium Routes API
@@ -707,11 +854,16 @@ export const pomeriumRoutesApi = {
       method: "DELETE",
     }),
   toggle: (id: string) =>
-    fetchApi<{ route: PomeriumRoute; enabled: boolean }>(`/api/pomerium/routes/${id}/toggle`, {
-      method: "POST",
-    }),
+    fetchApi<{ route: PomeriumRoute; enabled: boolean }>(
+      `/api/pomerium/routes/${id}/toggle`,
+      {
+        method: "POST",
+      },
+    ),
   listByDomain: (domainId: string) =>
-    fetchApi<{ routes: PomeriumRoute[] }>(`/api/pomerium/routes/domain/${domainId}`),
+    fetchApi<{ routes: PomeriumRoute[] }>(
+      `/api/pomerium/routes/domain/${domainId}`,
+    ),
 };
 
 // Pomerium Settings API
@@ -725,13 +877,13 @@ export const pomeriumSettingsApi = {
   regenerateSecrets: () =>
     fetchApi<{ success: boolean; message: string; settings: PomeriumSettings }>(
       "/api/pomerium/settings/regenerate-secrets",
-      { method: "POST" }
+      { method: "POST" },
     ),
   getStatus: () => fetchApi<PomeriumStatus>("/api/pomerium/settings/status"),
   restart: () =>
     fetchApi<{ success: boolean; message: string }>(
       "/api/pomerium/settings/restart",
-      { method: "POST" }
+      { method: "POST" },
     ),
 };
 
@@ -764,7 +916,7 @@ export const domainRouteRulesApi = {
   toggle: (id: string) =>
     fetchApi<{ routeRule: DomainRouteRule; enabled: boolean }>(
       `/api/domain-route-rules/${id}/toggle`,
-      { method: "POST" }
+      { method: "POST" },
     ),
   reorder: (rules: Array<{ id: string; priority: number }>) =>
     fetchApi<{ success: boolean }>("/api/domain-route-rules/reorder", {
@@ -785,23 +937,24 @@ export const domainIpRulesApi = {
   toggle: (domainId: string) =>
     fetchApi<{ ipRule: DomainIpRule; enabled: boolean }>(
       `/api/domains/${domainId}/ip-rules/toggle`,
-      { method: "POST" }
+      { method: "POST" },
     ),
   validate: (domainId: string, ipAddresses: string[]) =>
-    fetchApi<{ valid: boolean; results: IpValidationResult[]; errors: string[] }>(
-      `/api/domains/${domainId}/ip-rules/validate`,
-      {
-        method: "POST",
-        body: JSON.stringify({ ipAddresses }),
-      }
-    ),
+    fetchApi<{
+      valid: boolean;
+      results: IpValidationResult[];
+      errors: string[];
+    }>(`/api/domains/${domainId}/ip-rules/validate`, {
+      method: "POST",
+      body: JSON.stringify({ ipAddresses }),
+    }),
 };
 
 // Domain Security Headers API
 export const domainSecurityHeadersApi = {
   get: (domainId: string) =>
     fetchApi<{ securityHeaders: DomainSecurityHeaders }>(
-      `/api/domains/${domainId}/security-headers`
+      `/api/domains/${domainId}/security-headers`,
     ),
   update: (domainId: string, data: UpdateDomainSecurityHeadersData) =>
     fetchApi<{ securityHeaders: DomainSecurityHeaders }>(
@@ -809,32 +962,43 @@ export const domainSecurityHeadersApi = {
       {
         method: "PUT",
         body: JSON.stringify(data),
-      }
+      },
     ),
   preview: (domainId: string) =>
     fetchApi<{ headers: Record<string, string> }>(
-      `/api/domains/${domainId}/security-headers/preview`
+      `/api/domains/${domainId}/security-headers/preview`,
     ),
 };
 
 // Domain Blocked Routes API
 export const domainBlockedRoutesApi = {
   list: (domainId?: string) =>
-    fetchApi<{ blockedRoutes: DomainBlockedRoute[] }>("/api/domain-blocked-routes", {
-      params: { domainId },
-    }),
+    fetchApi<{ blockedRoutes: DomainBlockedRoute[] }>(
+      "/api/domain-blocked-routes",
+      {
+        params: { domainId },
+      },
+    ),
   get: (id: string) =>
-    fetchApi<{ blockedRoute: DomainBlockedRoute }>(`/api/domain-blocked-routes/${id}`),
+    fetchApi<{ blockedRoute: DomainBlockedRoute }>(
+      `/api/domain-blocked-routes/${id}`,
+    ),
   create: (data: CreateDomainBlockedRouteData) =>
-    fetchApi<{ blockedRoute: DomainBlockedRoute }>("/api/domain-blocked-routes", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ blockedRoute: DomainBlockedRoute }>(
+      "/api/domain-blocked-routes",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    ),
   update: (id: string, data: UpdateDomainBlockedRouteData) =>
-    fetchApi<{ blockedRoute: DomainBlockedRoute }>(`/api/domain-blocked-routes/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ blockedRoute: DomainBlockedRoute }>(
+      `/api/domain-blocked-routes/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
   delete: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/domain-blocked-routes/${id}`, {
       method: "DELETE",
@@ -842,7 +1006,7 @@ export const domainBlockedRoutesApi = {
   toggle: (id: string) =>
     fetchApi<{ blockedRoute: DomainBlockedRoute; enabled: boolean }>(
       `/api/domain-blocked-routes/${id}/toggle`,
-      { method: "POST" }
+      { method: "POST" },
     ),
 };
 
@@ -852,19 +1016,24 @@ export const domainBlockedRoutesApi = {
 
 // Analytics Config API
 export const analyticsConfigApi = {
-  list: () =>
-    fetchApi<{ configs: AnalyticsConfig[] }>("/api/analytics-config"),
+  list: () => fetchApi<{ configs: AnalyticsConfig[] }>("/api/analytics-config"),
   get: (domainId: string) =>
     fetchApi<{ config: AnalyticsConfig }>(`/api/analytics-config/${domainId}`),
   enable: (domainId: string, data?: EnableAnalyticsData) =>
-    fetchApi<{ config: AnalyticsConfig }>(`/api/analytics-config/${domainId}/enable`, {
-      method: "POST",
-      body: JSON.stringify(data || {}),
-    }),
+    fetchApi<{ config: AnalyticsConfig }>(
+      `/api/analytics-config/${domainId}/enable`,
+      {
+        method: "POST",
+        body: JSON.stringify(data || {}),
+      },
+    ),
   disable: (domainId: string) =>
-    fetchApi<{ config: AnalyticsConfig }>(`/api/analytics-config/${domainId}/disable`, {
-      method: "POST",
-    }),
+    fetchApi<{ config: AnalyticsConfig }>(
+      `/api/analytics-config/${domainId}/disable`,
+      {
+        method: "POST",
+      },
+    ),
   update: (domainId: string, data: UpdateAnalyticsConfigData) =>
     fetchApi<{ config: AnalyticsConfig }>(`/api/analytics-config/${domainId}`, {
       method: "PUT",
@@ -875,17 +1044,26 @@ export const analyticsConfigApi = {
       method: "DELETE",
     }),
   regenerateUuid: (domainId: string) =>
-    fetchApi<{ config: AnalyticsConfig }>(`/api/analytics-config/${domainId}/regenerate-uuid`, {
-      method: "POST",
-    }),
+    fetchApi<{ config: AnalyticsConfig }>(
+      `/api/analytics-config/${domainId}/regenerate-uuid`,
+      {
+        method: "POST",
+      },
+    ),
   regenerateApiToken: (domainId: string) =>
-    fetchApi<{ apiToken: string; message: string }>(`/api/analytics-config/${domainId}/regenerate-api-token`, {
-      method: "POST",
-    }),
+    fetchApi<{ apiToken: string; message: string }>(
+      `/api/analytics-config/${domainId}/regenerate-api-token`,
+      {
+        method: "POST",
+      },
+    ),
   rotatePublicDashboardToken: (domainId: string) =>
-    fetchApi<{ publicDashboardToken: string; publicDashboardUrl: string }>(`/api/analytics-config/${domainId}/public-dashboard/rotate`, {
-      method: "POST",
-    }),
+    fetchApi<{ publicDashboardToken: string; publicDashboardUrl: string }>(
+      `/api/analytics-config/${domainId}/public-dashboard/rotate`,
+      {
+        method: "POST",
+      },
+    ),
 };
 
 // Analytics Data API
@@ -918,10 +1096,17 @@ export const analyticsDataApi = {
     fetchApi<AnalyticsEvents>(`/api/analytics/${configId}/events`, {
       params: params as Record<string, string | undefined>,
     }),
-  getEventDetail: (configId: string, eventName: string, params?: AnalyticsQueryParams) =>
-    fetchApi<AnalyticsEventDetail>(`/api/analytics/${configId}/events/${eventName}`, {
-      params: params as Record<string, string | undefined>,
-    }),
+  getEventDetail: (
+    configId: string,
+    eventName: string,
+    params?: AnalyticsQueryParams,
+  ) =>
+    fetchApi<AnalyticsEventDetail>(
+      `/api/analytics/${configId}/events/${eventName}`,
+      {
+        params: params as Record<string, string | undefined>,
+      },
+    ),
   getUTM: (configId: string, params?: AnalyticsQueryParams) =>
     fetchApi<AnalyticsUTM>(`/api/analytics/${configId}/utm`, {
       params: params as Record<string, string | undefined>,
@@ -930,96 +1115,184 @@ export const analyticsDataApi = {
     fetchApi<AnalyticsLive>(`/api/analytics/${configId}/live`),
   getLiveWsInfo: (configId: string) =>
     fetchApi<{ wsUrl: string; trackingUuid: string; enabled: boolean }>(
-      `/api/analytics/${configId}/live/ws-info`
+      `/api/analytics/${configId}/live/ws-info`,
     ),
   exportCsv: (configId: string, params?: AnalyticsQueryParams) =>
-    `/api/analytics/${configId}/export/csv${params ? "?" + new URLSearchParams(
-      Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]
-    ).toString() : ""}`,
+    `/api/analytics/${configId}/export/csv${
+      params
+        ? "?" +
+          new URLSearchParams(
+            Object.entries(params).filter(([, v]) => v !== undefined) as [
+              string,
+              string,
+            ][],
+          ).toString()
+        : ""
+    }`,
   exportJson: (configId: string, params?: AnalyticsQueryParams) =>
-    fetchApi<{ data: Record<string, unknown>[] }>(`/api/analytics/${configId}/export/json`, {
-      params: params as Record<string, string | undefined>,
-    }),
+    fetchApi<{ data: Record<string, unknown>[] }>(
+      `/api/analytics/${configId}/export/json`,
+      {
+        params: params as Record<string, string | undefined>,
+      },
+    ),
 };
 
 // Analytics Funnels API
 export const analyticsFunnelsApi = {
   list: (configId: string) =>
-    fetchApi<{ funnels: AnalyticsFunnel[] }>(`/api/analytics-funnels/${configId}`),
+    fetchApi<{ funnels: AnalyticsFunnel[] }>(
+      `/api/analytics-funnels/${configId}`,
+    ),
   create: (configId: string, data: CreateAnalyticsFunnelData) =>
-    fetchApi<{ funnel: AnalyticsFunnel }>(`/api/analytics-funnels/${configId}`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (configId: string, funnelId: string, data: UpdateAnalyticsFunnelData) =>
-    fetchApi<{ funnel: AnalyticsFunnel }>(`/api/analytics-funnels/${configId}/${funnelId}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ funnel: AnalyticsFunnel }>(
+      `/api/analytics-funnels/${configId}`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    ),
+  update: (
+    configId: string,
+    funnelId: string,
+    data: UpdateAnalyticsFunnelData,
+  ) =>
+    fetchApi<{ funnel: AnalyticsFunnel }>(
+      `/api/analytics-funnels/${configId}/${funnelId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
   delete: (configId: string, funnelId: string) =>
-    fetchApi<{ success: boolean }>(`/api/analytics-funnels/${configId}/${funnelId}`, {
-      method: "DELETE",
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/analytics-funnels/${configId}/${funnelId}`,
+      {
+        method: "DELETE",
+      },
+    ),
   getResults: (configId: string, funnelId: string) =>
-    fetchApi<AnalyticsFunnelWithResults>(`/api/analytics-funnels/${configId}/${funnelId}/results`),
+    fetchApi<AnalyticsFunnelWithResults>(
+      `/api/analytics-funnels/${configId}/${funnelId}/results`,
+    ),
   recompute: (configId: string, funnelId: string) =>
-    fetchApi<{ message: string }>(`/api/analytics-funnels/${configId}/${funnelId}/recompute`, {
-      method: "POST",
-    }),
+    fetchApi<{ message: string }>(
+      `/api/analytics-funnels/${configId}/${funnelId}/recompute`,
+      {
+        method: "POST",
+      },
+    ),
 };
 
 // Analytics Public Dashboard API
 export const analyticsPublicApi = {
   verify: (token: string) =>
-    fetchApi<AnalyticsPublicDashboardVerify>(`/api/analytics-public/${token}/verify`),
+    fetchApi<AnalyticsPublicDashboardVerify>(
+      `/api/analytics-public/${token}/verify`,
+    ),
   authenticate: (token: string, password: string) =>
-    fetchApi<AnalyticsPublicDashboardAuth>(`/api/analytics-public/${token}/auth`, {
-      method: "POST",
-      body: JSON.stringify({ password }),
-    }),
-  getSummary: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+    fetchApi<AnalyticsPublicDashboardAuth>(
+      `/api/analytics-public/${token}/auth`,
+      {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      },
+    ),
+  getSummary: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsSummary>(`/api/analytics-public/${token}/summary`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  getTimeseries: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+  getTimeseries: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsTimeseries>(`/api/analytics-public/${token}/timeseries`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  getPages: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+  getPages: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsPages>(`/api/analytics-public/${token}/pages`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  getReferrers: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+  getReferrers: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsReferrers>(`/api/analytics-public/${token}/referrers`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  getGeography: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+  getGeography: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsGeography>(`/api/analytics-public/${token}/geography`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  getDevices: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+  getDevices: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsDevices>(`/api/analytics-public/${token}/devices`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  getUTM: (token: string, params?: AnalyticsQueryParams, sessionToken?: string) =>
+  getUTM: (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ) =>
     fetchApi<AnalyticsUTM>(`/api/analytics-public/${token}/utm`, {
       params: params as Record<string, string | undefined>,
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     }),
-  exportCsv: async (token: string, params?: AnalyticsQueryParams, sessionToken?: string): Promise<void> => {
+  exportCsv: async (
+    token: string,
+    params?: AnalyticsQueryParams,
+    sessionToken?: string,
+  ): Promise<void> => {
     const qs = params
-      ? "?" + new URLSearchParams(
-          Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]
+      ? "?" +
+        new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v !== undefined) as [
+            string,
+            string,
+          ][],
         ).toString()
       : "";
     const resp = await fetch(`/api/analytics-public/${token}/export/csv${qs}`, {
-      headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined,
+      headers: sessionToken
+        ? { Authorization: `Bearer ${sessionToken}` }
+        : undefined,
     });
     if (!resp.ok) throw new Error("CSV export failed");
     const blob = await resp.blob();
@@ -1035,47 +1308,72 @@ export const analyticsPublicApi = {
 // Shared Backends API
 export const sharedBackendsApi = {
   list: () =>
-    fetchApi<{ sharedBackends: import("./types").SharedBackend[] }>("/api/shared-backends"),
+    fetchApi<{ sharedBackends: import("./types").SharedBackend[] }>(
+      "/api/shared-backends",
+    ),
   get: (id: string) =>
-    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(`/api/shared-backends/${id}`),
+    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(
+      `/api/shared-backends/${id}`,
+    ),
   create: (data: import("./types").CreateSharedBackendData) =>
-    fetchApi<{ sharedBackend: import("./types").SharedBackend }>("/api/shared-backends", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(
+      "/api/shared-backends",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    ),
   update: (id: string, data: import("./types").UpdateSharedBackendData) =>
-    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(`/api/shared-backends/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(
+      `/api/shared-backends/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    ),
   delete: (id: string, force = false) =>
-    fetchApi<{ success: boolean }>(`/api/shared-backends/${id}?force=${force}`, {
-      method: "DELETE",
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/shared-backends/${id}?force=${force}`,
+      {
+        method: "DELETE",
+      },
+    ),
   listDomains: (id: string) =>
-    fetchApi<{ domains: import("./types").Domain[] }>(`/api/shared-backends/${id}/domains`),
+    fetchApi<{ domains: import("./types").Domain[] }>(
+      `/api/shared-backends/${id}/domains`,
+    ),
   linkDomain: (id: string, domainId: string) =>
     fetchApi<{ link: unknown }>(`/api/shared-backends/${id}/domains`, {
       method: "POST",
       body: JSON.stringify({ domainId }),
     }),
   unlinkDomain: (id: string, domainId: string) =>
-    fetchApi<{ success: boolean }>(`/api/shared-backends/${id}/domains/${domainId}`, {
-      method: "DELETE",
-    }),
+    fetchApi<{ success: boolean }>(
+      `/api/shared-backends/${id}/domains/${domainId}`,
+      {
+        method: "DELETE",
+      },
+    ),
   toggle: (id: string) =>
-    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(`/api/shared-backends/${id}/toggle`, {
-      method: "PATCH",
-    }),
+    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(
+      `/api/shared-backends/${id}/toggle`,
+      {
+        method: "PATCH",
+      },
+    ),
   toggleBackup: (id: string) =>
-    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(`/api/shared-backends/${id}/backup`, {
-      method: "PATCH",
-    }),
+    fetchApi<{ sharedBackend: import("./types").SharedBackend }>(
+      `/api/shared-backends/${id}/backup`,
+      {
+        method: "PATCH",
+      },
+    ),
 };
 
 // Cluster APIs
 export const clusterApi = {
-  list: () => fetchApi<{ nodes: import("./types").ClusterNode[] }>("/api/cluster"),
+  list: () =>
+    fetchApi<{ nodes: import("./types").ClusterNode[] }>("/api/cluster"),
   get: (id: string) =>
     fetchApi<{ node: import("./types").ClusterNode }>(`/api/cluster/${id}`),
   create: (data: import("./types").CreateClusterNodeData) =>
@@ -1091,18 +1389,25 @@ export const clusterApi = {
   delete: (id: string) =>
     fetchApi<{ success: boolean }>(`/api/cluster/${id}`, { method: "DELETE" }),
   sync: (id: string) =>
-    fetchApi<{ success: boolean; jobId: string | undefined }>(`/api/cluster/${id}/sync`, {
-      method: "POST",
-    }),
+    fetchApi<{ success: boolean; jobId: string | undefined }>(
+      `/api/cluster/${id}/sync`,
+      {
+        method: "POST",
+      },
+    ),
   syncAll: () =>
-    fetchApi<{ success: boolean; nodesQueued: number; jobId: string | undefined }>(
-      "/api/cluster/sync-all",
-      { method: "POST" }
-    ),
+    fetchApi<{
+      success: boolean;
+      nodesQueued: number;
+      jobId: string | undefined;
+    }>("/api/cluster/sync-all", { method: "POST" }),
   checkStatus: (id: string) =>
-    fetchApi<{ nodeId: string; status: string; health?: unknown; error?: string }>(
-      `/api/cluster/${id}/status`
-    ),
+    fetchApi<{
+      nodeId: string;
+      status: string;
+      health?: unknown;
+      error?: string;
+    }>(`/api/cluster/${id}/status`),
 };
 
 // Export ApiError for use in error handling

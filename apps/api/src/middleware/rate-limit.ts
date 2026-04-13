@@ -238,7 +238,7 @@ export async function checkRateLimit(
 
   return {
     count: result.count,
-    blocked: result.count > maxRequests,
+    blocked: result.count >= maxRequests,
     resetSeconds: result.resetSeconds,
   };
 }
@@ -265,7 +265,7 @@ export async function isRateLimited(
       const ttl = await redis.ttl(fullKey);
       const resetSeconds = ttl > 0 ? ttl : Math.ceil(windowMs / 1000);
       return {
-        blocked: parseInt(count, 10) > maxRequests,
+        blocked: parseInt(count, 10) >= maxRequests,
         resetSeconds,
       };
     } catch {
@@ -281,7 +281,7 @@ export async function isRateLimited(
 
   const resetSeconds = Math.ceil((entry.resetTime - Date.now()) / 1000);
   return {
-    blocked: entry.count > maxRequests,
+    blocked: entry.count >= maxRequests,
     resetSeconds,
   };
 }

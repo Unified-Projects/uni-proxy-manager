@@ -55,12 +55,7 @@ fn validate_hostname(hostname: &str) -> Option<String> {
 }
 
 /// Verify Bearer token authentication
-fn verify_auth(headers: &HeaderMap, expected_secret: &Option<String>) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
-    let Some(secret) = expected_secret else {
-        // No secret configured, authentication disabled (with warning at startup)
-        return Ok(());
-    };
-
+fn verify_auth(headers: &HeaderMap, expected_secret: &str) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
     let auth_header = headers.get("authorization")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
@@ -77,7 +72,7 @@ fn verify_auth(headers: &HeaderMap, expected_secret: &Option<String>) -> Result<
     let token = &auth_header[7..]; // Skip "Bearer "
 
     // Timing-safe comparison
-    if !constant_time_eq(token.as_bytes(), secret.as_bytes()) {
+    if !constant_time_eq(token.as_bytes(), expected_secret.as_bytes()) {
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
@@ -187,13 +182,12 @@ pub struct InvalidateResponse {
     invalidated: u64,
 }
 
-/// Invalidate cache entries (requires authentication if SITES_INVALIDATE_SECRET is set)
+/// Invalidate cache entries (always requires authentication)
 pub async fn invalidate_cache(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(request): Json<InvalidateRequest>,
 ) -> impl IntoResponse {
-    // SECURITY: Verify authentication
     if let Err(response) = verify_auth(&headers, &state.invalidate_secret) {
         return response.into_response();
     }

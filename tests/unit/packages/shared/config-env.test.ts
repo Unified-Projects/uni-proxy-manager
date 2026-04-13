@@ -382,7 +382,8 @@ describe("Config/Env", () => {
   });
 
   describe("getAuthConfig", () => {
-    it("should return disabled when no API key set", async () => {
+    it("should return disabled when auth is explicitly disabled", async () => {
+      process.env.UNI_PROXY_MANAGER_AUTH_ENABLED = "false";
       delete process.env.UNI_PROXY_MANAGER_API_KEY;
 
       vi.resetModules();
@@ -392,6 +393,17 @@ describe("Config/Env", () => {
       const config = getAuthConfig();
       expect(config.enabled).toBe(false);
       expect(config.apiKey).toBe("");
+    });
+
+    it("should throw when auth is enabled without an API key", async () => {
+      process.env.UNI_PROXY_MANAGER_AUTH_ENABLED = "true";
+      delete process.env.UNI_PROXY_MANAGER_API_KEY;
+
+      vi.resetModules();
+      const { getAuthConfig, resetEnvCache } = await import("../../../../packages/shared/src/config/env");
+      resetEnvCache();
+
+      expect(() => getAuthConfig()).toThrow("UNI_PROXY_MANAGER_API_KEY");
     });
 
     it("should return enabled when API key set", async () => {

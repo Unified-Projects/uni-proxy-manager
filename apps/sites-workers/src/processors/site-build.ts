@@ -10,7 +10,7 @@ import { S3Service, joinS3Key } from "@uni-proxy-manager/shared/s3";
 import { QUEUES } from "@uni-proxy-manager/queue";
 import type { SiteBuildJobData, SiteBuildResult, SiteDeployJobData } from "@uni-proxy-manager/queue";
 import { spawn } from "child_process";
-import { mkdir, rm, writeFile, readFile, stat, access, copyFile } from "fs/promises";
+import { mkdir, rm, writeFile, readFile, stat, access, copyFile, readdir } from "fs/promises";
 import * as tar from "tar";
 import { join } from "path";
 
@@ -20,6 +20,17 @@ const STORAGE_DIR = process.env.SITES_STORAGE_DIR || "/storage/functions";
 const BUILDS_DIR = process.env.SITES_BUILDS_DIR || "/storage/builds";
 
 const USE_EXECUTOR_BUILDS = process.env.SITES_USE_EXECUTOR_BUILDS !== "false";
+const DEFAULT_BUILD_TIMEOUT_SECONDS = 900;
+const EXCLUDED_STATIC_SOURCE_FILES = new Set([
+  ".env",
+  ".nvmrc",
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "node_modules",
+]);
 
 interface BuildContext {
   workDir: string;
@@ -100,6 +111,27 @@ const fileExists = async (path: string): Promise<boolean> => {
   }
 };
 
+const trimCommand = (command?: string | null): string | undefined => {
+  const trimmed = command?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+const getEffectiveBuildConfig = (
+  buildConfig: SiteBuildJobData["buildConfig"] | undefined,
+  site: { buildCpus?: string | null; buildMemoryMb?: number | null; buildTimeoutSeconds?: number | null }
+) => ({
+  cpus: buildConfig?.cpus ?? parseFloat(site.buildCpus || "1.0"),
+  memoryMb: buildConfig?.memoryMb ?? site.buildMemoryMb ?? 2048,
+  timeoutSeconds: buildConfig?.timeoutSeconds ?? site.buildTimeoutSeconds ?? DEFAULT_BUILD_TIMEOUT_SECONDS,
+});
+
+const collectStaticSourceEntries = async (workDir: string): Promise<string[]> => {
+  const entries = await readdir(workDir, { withFileTypes: true });
+  return entries
+    .map((entry) => entry.name)
+    .filter((name) => !EXCLUDED_STATIC_SOURCE_FILES.has(name));
+};
+
 /**
  * Execute build using URT executor (Unified Runtimes)
  *
@@ -119,8 +151,8 @@ async function executeExecutorBuild(params: {
   sourceTarPath?: string; // Direct tar.gz upload path (skip repacking)
   framework: string;
   nodeVersion: string;
-  installCommand: string;
-  buildCommand: string;
+  installCommand?: string;
+  buildCommand?: string;
   buildFlags?: string[];
   outputDirectory?: string;
   envVariables: Record<string, string>;
@@ -265,7 +297,9 @@ async function executeExecutorBuild(params: {
   }
 
   // Add install command
-  commands.push(installCommand);
+  if (installCommand) {
+    commands.push(installCommand);
+  }
 
   const effectiveBuildCommand = buildCommand || frameworkConfig.buildCommand;
   if (effectiveBuildCommand) {
@@ -466,7 +500,6 @@ export async function processSiteBuild(
     await log("Starting build process...");
     await log(`Node.js version: ${nodeVersion}`);
     await log(`Framework: ${framework}`);
-    await log(`Build resources: ${buildConfig.cpus} CPUs, ${buildConfig.memoryMb}MB RAM, ${buildConfig.timeoutSeconds}s timeout`);
 
     // Update deployment status to building
     await db
@@ -492,6 +525,16 @@ export async function processSiteBuild(
     if (!site) {
       throw new Error(`Site ${siteId} not found`);
     }
+
+    const effectiveBuildConfig = getEffectiveBuildConfig(buildConfig, site);
+    const normalizedBuildCommand = trimCommand(buildCommand);
+    const normalizedInstallCommand = trimCommand(installCommand);
+    const shouldPackageStaticSource =
+      framework === "static" && !normalizedBuildCommand && !normalizedInstallCommand;
+
+    await log(
+      `Build resources: ${effectiveBuildConfig.cpus} CPUs, ${effectiveBuildConfig.memoryMb}MB RAM, ${effectiveBuildConfig.timeoutSeconds}s timeout`
+    );
 
     // Track if source is a direct tar.gz upload (skip repacking in executor build)
     let directTarPath: string | undefined;
@@ -587,6 +630,7 @@ export async function processSiteBuild(
     let resolvedEntryPoint = site.entryPoint || undefined;
     let resolvedRuntimePath = site.runtimePath || undefined;
     let artifactStats: { size: number };
+    let usedExecutorBuild = false;
 
     // Check for S3 provider (used for caching and backup)
     const s3Provider = await db.query.s3Providers.findFirst({
@@ -602,8 +646,33 @@ export async function processSiteBuild(
     }) : null;
     const s3PathPrefix = s3Provider?.pathPrefix || undefined;
 
-    if (USE_EXECUTOR_BUILDS) {
+    if (shouldPackageStaticSource) {
+      await log("Static source detected with no build commands; packaging uploaded files directly...");
+
+      const staticEntries = await collectStaticSourceEntries(ctx.workDir);
+      if (staticEntries.length === 0) {
+        throw new Error("No deployable static files found in uploaded source.");
+      }
+
+      const artifactName = "artifact.tar.gz";
+      const artifactLocalPath = join(STORAGE_DIR, deploymentId, artifactName);
+
+      await log(`Packaging static source entries: ${staticEntries.join(", ")}`);
+      await tar.create(
+        {
+          gzip: true,
+          file: artifactLocalPath,
+          cwd: ctx.workDir,
+        },
+        staticEntries
+      );
+
+      artifactStats = await stat(artifactLocalPath);
+      ctx.artifactPath = `local:${artifactLocalPath}`;
+      await log(`Static artifact created: ${(artifactStats.size / 1024 / 1024).toFixed(2)} MB`);
+    } else if (USE_EXECUTOR_BUILDS) {
       await log("Using URT executor for build...");
+      usedExecutorBuild = true;
 
       const executorResult = await executeExecutorBuild({
         siteId,
@@ -612,16 +681,12 @@ export async function processSiteBuild(
         sourceTarPath: directTarPath, // Pass direct tar.gz to skip repacking
         framework,
         nodeVersion,
-        installCommand,
-        buildCommand,
+        installCommand: normalizedInstallCommand,
+        buildCommand: normalizedBuildCommand,
         buildFlags,
         outputDirectory,
         envVariables,
-        buildConfig: {
-          cpus: buildConfig.cpus,
-          memoryMb: buildConfig.memoryMb,
-          timeoutSeconds: buildConfig.timeoutSeconds,
-        },
+        buildConfig: effectiveBuildConfig,
         s3: s3Service,
         s3PathPrefix,
         log,
@@ -670,8 +735,18 @@ export async function processSiteBuild(
       }
 
       // Run install command
-      await log(`Running: ${installCommand}`);
-      await runShellCommand(installCommand, ctx.workDir, log, envVariables, buildConfig.timeoutSeconds);
+      if (normalizedInstallCommand) {
+        await log(`Running: ${normalizedInstallCommand}`);
+        await runShellCommand(
+          normalizedInstallCommand,
+          ctx.workDir,
+          log,
+          envVariables,
+          effectiveBuildConfig.timeoutSeconds
+        );
+      } else {
+        await log("Skipping install step (no install command configured)");
+      }
 
       if (cancelled) {
         throw new Error("Build cancelled");
@@ -680,7 +755,7 @@ export async function processSiteBuild(
       // Run build command - user's buildCommand takes precedence, framework config is fallback
       await log("Phase 3: Building application...");
       const frameworkBuildConfig = FRAMEWORK_BUILD_CONFIG[framework];
-      const effectiveBuildCmd = buildCommand || frameworkBuildConfig?.buildCommand;
+      const effectiveBuildCmd = normalizedBuildCommand || frameworkBuildConfig?.buildCommand;
 
       if (!effectiveBuildCmd) {
         throw new Error(`No build command specified and no default build command for framework: ${framework}`);
@@ -691,7 +766,13 @@ export async function processSiteBuild(
         : effectiveBuildCmd;
 
       await log(`Running: ${fullBuildCommand}`);
-      await runShellCommand(fullBuildCommand, ctx.workDir, log, envVariables, buildConfig.timeoutSeconds);
+      await runShellCommand(
+        fullBuildCommand,
+        ctx.workDir,
+        log,
+        envVariables,
+        effectiveBuildConfig.timeoutSeconds
+      );
 
       if (cancelled) {
         throw new Error("Build cancelled");
@@ -782,12 +863,14 @@ export async function processSiteBuild(
 
     // Update site with detected configuration (both paths)
     if (
+      detectedRenderMode !== site.renderMode ||
       resolvedEntryPoint !== site.entryPoint ||
       resolvedRuntimePath !== site.runtimePath
     ) {
       await db
         .update(sites)
         .set({
+          renderMode: detectedRenderMode,
           entryPoint: resolvedEntryPoint,
           runtimePath: resolvedRuntimePath,
           updatedAt: new Date(),
@@ -795,13 +878,13 @@ export async function processSiteBuild(
         .where(eq(sites.id, siteId));
 
       await log(
-        `Updated runtime config: entryPoint=${resolvedEntryPoint || "n/a"}, runtimePath=${resolvedRuntimePath || "n/a"}`
+        `Updated runtime config: renderMode=${detectedRenderMode}, entryPoint=${resolvedEntryPoint || "n/a"}, runtimePath=${resolvedRuntimePath || "n/a"}`
       );
     }
 
     // S3 artifact handling
     if (s3Provider && s3Service) {
-      if (USE_EXECUTOR_BUILDS) {
+      if (usedExecutorBuild) {
         // Executor already wrote artifact to S3; ctx.artifactPath is already the S3 key
         await log(`Artifact already in S3 at: ${ctx.artifactPath}`);
       } else {
@@ -886,6 +969,7 @@ export async function processSiteBuild(
           deploymentId,
           targetSlot: deployment.slot || "blue",
           artifactPath: ctx.artifactPath,
+          renderMode: detectedRenderMode,
           runtimeConfig: {
             cpus: parseFloat(site.cpuLimit || "0.5"),
             memoryMb: site.memoryMb || 256,

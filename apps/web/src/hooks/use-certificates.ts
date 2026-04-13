@@ -1,12 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { certificatesApi } from "@/lib/api";
-import type { RequestCertificateData, UpdateCertificateData } from "@/lib/types";
+import type {
+  RequestCertificateData,
+  UpdateCertificateData,
+} from "@/lib/types";
 import { domainKeys } from "./use-domains";
 
 export const certificateKeys = {
   all: ["certificates"] as const,
   lists: () => [...certificateKeys.all, "list"] as const,
-  list: (domainId?: string) => [...certificateKeys.lists(), { domainId }] as const,
+  list: (domainId?: string) =>
+    [...certificateKeys.lists(), { domainId }] as const,
   details: () => [...certificateKeys.all, "detail"] as const,
   detail: (id: string) => [...certificateKeys.details(), id] as const,
 };
@@ -32,6 +36,39 @@ export function useCertificate(id: string) {
   });
 }
 
+export function formatCertificateAltNamesInput(
+  altNames: string[] | null | undefined,
+) {
+  return (altNames ?? []).join("\n");
+}
+
+export function parseCertificateAltNamesInput(
+  input: string,
+  commonName?: string | null,
+) {
+  const normalizedCommonName = commonName?.trim().toLowerCase();
+  const seen = new Set<string>();
+
+  return input
+    .split(/[,\n]/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .filter((value) => {
+      const normalizedValue = value.toLowerCase();
+
+      if (normalizedValue === normalizedCommonName) {
+        return false;
+      }
+
+      if (seen.has(normalizedValue)) {
+        return false;
+      }
+
+      seen.add(normalizedValue);
+      return true;
+    });
+}
+
 export function useRequestCertificate() {
   const queryClient = useQueryClient();
 
@@ -39,7 +76,10 @@ export function useRequestCertificate() {
     mutationFn: (data: RequestCertificateData) => certificatesApi.request(data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: certificateKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: domainKeys.detail(variables.domainId) });
+      queryClient.invalidateQueries({ queryKey: domainKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: domainKeys.detail(variables.domainId),
+      });
     },
   });
 }
@@ -50,9 +90,15 @@ export function useUpdateCertificate() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdateCertificateData }) =>
       certificatesApi.update(id, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: certificateKeys.detail(variables.id) });
+    onSuccess: (response, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: certificateKeys.detail(variables.id),
+      });
       queryClient.invalidateQueries({ queryKey: certificateKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: domainKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: domainKeys.detail(response.certificate.domainId),
+      });
     },
   });
 }
@@ -62,9 +108,15 @@ export function useRenewCertificate() {
 
   return useMutation({
     mutationFn: (id: string) => certificatesApi.renew(id),
-    onSuccess: (_, id) => {
+    onSuccess: (response, id) => {
       queryClient.invalidateQueries({ queryKey: certificateKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: certificateKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: domainKeys.lists() });
+      if (response.certificate?.domainId) {
+        queryClient.invalidateQueries({
+          queryKey: domainKeys.detail(response.certificate.domainId),
+        });
+      }
     },
   });
 }
@@ -76,6 +128,7 @@ export function useDeleteCertificate() {
     mutationFn: (id: string) => certificatesApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: certificateKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: domainKeys.lists() });
     },
   });
 }

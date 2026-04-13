@@ -155,12 +155,14 @@ export function RealtimeTab({ configId }: RealtimeTabProps) {
   const { transport, wsData, wsUpdatedAt } =
     useRealtimeWebSocket(configId);
 
-  // HTTP polling fallback -- always runs but only used when WS is unavailable.
+  const shouldPoll = transport !== "websocket";
+
+  // HTTP polling fallback only runs while WS is unavailable or reconnecting.
   const {
     data: pollingData,
     isLoading: pollingLoading,
     dataUpdatedAt: pollingUpdatedAt,
-  } = useAnalyticsLive(configId);
+  } = useAnalyticsLive(configId, { enabled: shouldPoll });
 
   // Use WebSocket data when available, otherwise fall back to polling.
   const usingWs = transport === "websocket" && wsData !== null;

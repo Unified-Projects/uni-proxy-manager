@@ -33,6 +33,7 @@ import settingsExportImportRoutes from "./routes/settings-export-import";
 import clusterRoutes from "./routes/cluster";
 import haproxyRuntimeRoutes from "./routes/haproxy-runtime";
 import clusterRuntimeRoutes from "./routes/cluster-runtime";
+import analyticsPublicRoutes from "./routes/analytics-public";
 
 const app = new Hono();
 
@@ -57,7 +58,7 @@ if (authConfig.enabled) {
   app.use("*", authMiddleware);
   console.log("[API] Authentication enabled - API key required for all endpoints except /health");
 } else {
-  console.warn("[API] Authentication DISABLED - API is publicly accessible. Set UNI_PROXY_MANAGER_API_KEY to enable.");
+  console.warn("[API] Authentication explicitly disabled via UNI_PROXY_MANAGER_AUTH_ENABLED=false.");
 }
 
 // Request body size limit (10MB) to prevent resource exhaustion
@@ -118,6 +119,7 @@ app.route("/api/settings", settingsExportImportRoutes);
 app.route("/api/cluster", clusterRoutes);
 app.route("/api/haproxy/runtime", haproxyRuntimeRoutes);
 app.route("/api/cluster/runtime", clusterRuntimeRoutes);
+app.route("/api/analytics-public", analyticsPublicRoutes);
 
 const extensions = getExtensionStatus();
 
@@ -182,12 +184,10 @@ if (extensions.analytics) {
     import("./routes/analytics"),
     import("./routes/analytics-config"),
     import("./routes/analytics-funnels"),
-    import("./routes/analytics-public"),
-  ]).then(([analyticsRoutes, configRoutes, funnelRoutes, publicRoutes]) => {
+  ]).then(([analyticsRoutes, configRoutes, funnelRoutes]) => {
     app.route("/api/analytics", analyticsRoutes.default);
     app.route("/api/analytics-config", configRoutes.default);
     app.route("/api/analytics-funnels", funnelRoutes.default);
-    app.route("/api/analytics-public", publicRoutes.default);
     setAnalyticsWsProxyHandler(analyticsRoutes.createAnalyticsWsProxyHandler());
     console.log("[API] Analytics extension routes mounted");
   }).catch((error) => {
@@ -224,6 +224,7 @@ app.get("/", (c) => {
     settings: "/api/settings",
     cluster: "/api/cluster",
     clusterRuntime: "/api/cluster/runtime",
+    analyticsPublic: "/api/analytics-public",
   };
 
   // Add Sites endpoints if extension is enabled
@@ -245,7 +246,6 @@ app.get("/", (c) => {
     endpoints.analytics = "/api/analytics";
     endpoints.analyticsConfig = "/api/analytics-config";
     endpoints.analyticsFunnels = "/api/analytics-funnels";
-    endpoints.analyticsPublic = "/api/analytics-public";
   }
 
   return c.json({

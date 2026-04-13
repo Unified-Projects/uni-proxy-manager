@@ -1,104 +1,6 @@
 import { type Context, type Next } from "hono";
 import { getAuthConfig } from "@uni-proxy-manager/shared/config";
-import { networkInterfaces } from "os";
-import { lookup } from "dns/promises";
 import { checkRateLimit, isRateLimited, getClientId } from "./rate-limit";
-
-// Dynamic import for Bun-specific module (only works in Bun runtime)
-let getConnInfo: ((c: Context) => { remote?: { address?: string } }) | null = null;
-try {
-  // Only import hono/bun if running in Bun
-  if (typeof globalThis.Bun !== "undefined") {
-     
-    const honoBun = require("hono/bun");
-    getConnInfo = honoBun.getConnInfo;
-  }
-} catch {
-  // Not running in Bun, getConnInfo will remain null
-}
-
-// Cache for trusted IPs (resolved once at startup)
-const trustedSubnets: string[] = [];
-const trustedIPs: Set<string> = new Set();
-let initialized = false;
-
-/**
- * Extract /24 subnet from an IP address
- */
-function getSubnet24(ip: string): string | null {
-  // Handle IPv6-mapped IPv4
-  const cleanIP = ip.replace(/^::ffff:/, "");
-  const parts = cleanIP.split(".");
-  if (parts.length === 4) {
-    return `${parts[0]}.${parts[1]}.${parts[2]}.`;
-  }
-  return null;
-}
-
-/**
- * Initialize trusted networks by detecting our subnet and resolving Docker service names
- */
-async function initTrustedNetworks() {
-  if (initialized) return;
-  initialized = true;
-
-  // Get our own IPs and subnets
-  const interfaces = networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        const subnet = getSubnet24(iface.address);
-        if (subnet && !trustedSubnets.includes(subnet)) {
-          trustedSubnets.push(subnet);
-        }
-      }
-    }
-  }
-
-  // Resolve Docker service names to get their IPs
-  const dockerServices = ["web", "dashboard-proxy", "haproxy", "workers", "sites-lookup", "sites-workers"];
-  for (const service of dockerServices) {
-    try {
-      const result = await lookup(service);
-      trustedIPs.add(result.address);
-    } catch {
-      // Service doesn't exist or can't be resolved - that's fine
-    }
-  }
-
-  // Always trust localhost
-  trustedIPs.add("127.0.0.1");
-  trustedIPs.add("::1");
-}
-
-/**
- * Check if an IP is trusted (on our subnet or a known service)
- */
-function isTrustedIP(ip: string | undefined): boolean {
-  if (!ip) return false;
-
-  // Clean IPv6-mapped addresses
-  const cleanIP = ip.replace(/^::ffff:/, "");
-
-  // Check explicit trusted IPs
-  if (trustedIPs.has(cleanIP) || trustedIPs.has(ip)) {
-    return true;
-  }
-
-  // Check if IP is on a trusted subnet
-  for (const subnet of trustedSubnets) {
-    if (cleanIP.startsWith(subnet)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-// Initialize on module load
-initTrustedNetworks().catch(err => {
-  console.error("[Auth] Failed to initialize trusted networks:", err);
-});
 
 /**
  * API Key Authentication Middleware
@@ -108,8 +10,8 @@ initTrustedNetworks().catch(err => {
  *
  * Skips authentication for:
  * - /health endpoint (health checks)
- * - Requests when auth is disabled (development mode)
- * - Requests from internal Docker network (dashboard-proxy)
+ * - Requests when auth is explicitly disabled
+ * - Public analytics dashboard routes (they use their own token auth)
  */
 export async function authMiddleware(c: Context, next: Next) {
   const authConfig = getAuthConfig();
@@ -131,20 +33,6 @@ export async function authMiddleware(c: Context, next: Next) {
     return next();
   }
 
-  // Skip auth for internal Docker network requests
-  // Check the direct socket connection IP (not X-Forwarded-For which can be spoofed)
-  if (getConnInfo) {
-    try {
-      const connInfo = getConnInfo(c);
-      const remoteIP = connInfo?.remote?.address;
-      if (isTrustedIP(remoteIP)) {
-        return next();
-      }
-    } catch {
-      // getConnInfo failed, continue with auth check
-    }
-  }
-
   // Check if this IP is currently blocked due to too many auth failures.
   // Allow 5 failed attempts per 15-minute window before blocking.
   // The initial check is read-only (does not increment); only actual failures
@@ -157,6 +45,7 @@ export async function authMiddleware(c: Context, next: Next) {
   try {
     const failStatus = await isRateLimited(authFailKey, AUTH_FAIL_MAX, AUTH_FAIL_WINDOW_MS);
     if (failStatus.blocked) {
+      c.header("Retry-After", String(failStatus.resetSeconds));
       return c.json(
         {
           error: "Too Many Requests",

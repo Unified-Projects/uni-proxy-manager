@@ -140,8 +140,8 @@ export interface SiteBuildJobData {
   commitSha?: string;
   branch: string;
   envVariables: Record<string, string>;
-  buildCommand: string;
-  installCommand: string;
+  buildCommand?: string;
+  installCommand?: string;
   nodeVersion: string;
   framework: "nextjs" | "sveltekit" | "static" | "custom";
   buildFlags?: string[];
@@ -163,6 +163,7 @@ export interface SiteDeployJobData {
   deploymentId: string;
   targetSlot: "blue" | "green";
   artifactPath: string;
+  renderMode?: "ssr" | "ssg";
   runtimeConfig: {
     cpus: number;
     memoryMb: number;

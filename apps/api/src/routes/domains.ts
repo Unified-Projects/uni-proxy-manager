@@ -3,7 +3,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { nanoid } from "nanoid";
 import { db } from "@uni-proxy-manager/database";
-import { domains, backends, certificates, dnsProviders, domainRouteRules, pomeriumRoutes, domainSharedBackends } from "@uni-proxy-manager/database/schema";
+import { domains, backends, certificates, dnsProviders, domainRouteRules, pomeriumRoutes, domainSharedBackends, pomeriumSettings } from "@uni-proxy-manager/database/schema";
 import { eq, and } from "drizzle-orm";
 import { computeDomainStatus, type CertificateForWildcardCheck } from "@uni-proxy-manager/shared/domain-status";
 import { Queue } from "bullmq";
@@ -12,9 +12,62 @@ import { QUEUES, type CertificateIssueJobData } from "@uni-proxy-manager/queue";
 import { getAcmeConfig, getCertsDir } from "@uni-proxy-manager/shared/config";
 import { validateBypassIPs } from "@uni-proxy-manager/shared";
 import { rm } from "fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, isAbsolute, normalize, relative, resolve } from "path";
 
 const app = new Hono();
+
+function getAuthenticateServiceHostname(
+  authenticateServiceUrl: string | null | undefined
+): string | null {
+  if (!authenticateServiceUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(authenticateServiceUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function getManagedCertificateDirectory(certPath: string | null | undefined): string | null {
+  if (!certPath || typeof certPath !== "string" || certPath.includes("\0")) {
+    return null;
+  }
+
+  const certsDir = resolve(getCertsDir());
+  const normalizedPath = isAbsolute(certPath)
+    ? relative(certsDir, resolve(certPath)).replace(/\\/g, "/")
+    : normalize(certPath).replace(/\\/g, "/");
+  const segments = normalizedPath.split("/").filter(Boolean);
+
+  if (
+    normalizedPath === "." ||
+    normalizedPath.startsWith("..") ||
+    normalizedPath.includes("/../") ||
+    normalizedPath.startsWith("/") ||
+    segments.length < 2
+  ) {
+    return null;
+  }
+
+  const relativeDir = dirname(normalizedPath).replace(/\\/g, "/");
+  if (!relativeDir || relativeDir === "." || relativeDir === "/") {
+    return null;
+  }
+
+  const absoluteDir = resolve(certsDir, relativeDir);
+  const relativeDirCheck = relative(certsDir, absoluteDir).replace(/\\/g, "/");
+  if (
+    relativeDirCheck === "." ||
+    relativeDirCheck.startsWith("..") ||
+    relativeDirCheck.includes("/../")
+  ) {
+    return null;
+  }
+
+  return absoluteDir;
+}
 
 /**
  * Validate a hostname for security
@@ -147,13 +200,23 @@ app.get("/", async (c) => {
       })).map(r => r.domainId)
     );
 
+    const settings = await db.query.pomeriumSettings.findFirst({
+      where: eq(pomeriumSettings.id, "default"),
+      columns: { authenticateServiceUrl: true },
+    });
+    const authenticateServiceHostname = getAuthenticateServiceHostname(
+      settings?.authenticateServiceUrl
+    );
+
     // Add computed status to each domain
     const domainsWithStatus = allDomains.map((domain) => ({
       ...domain,
       statusComputed: computeDomainStatus({
         ...domain,
         hasRedirectRoutes: redirectRuleDomainIds.has(domain.id),
-        hasPomeriumRoutes: pomeriumRouteDomainIds.has(domain.id),
+        hasPomeriumRoutes:
+          pomeriumRouteDomainIds.has(domain.id) ||
+          domain.hostname.toLowerCase() === authenticateServiceHostname,
         hasSharedBackends: sharedBackendDomainIds.has(domain.id),
       }, allCertificates),
     }));
@@ -205,13 +268,23 @@ app.get("/:id", async (c) => {
       }),
     ]);
 
+    const settings = await db.query.pomeriumSettings.findFirst({
+      where: eq(pomeriumSettings.id, "default"),
+      columns: { authenticateServiceUrl: true },
+    });
+    const authenticateServiceHostname = getAuthenticateServiceHostname(
+      settings?.authenticateServiceUrl
+    );
+
     // Add computed status
     const domainWithStatus = {
       ...domain,
       statusComputed: computeDomainStatus({
         ...domain,
         hasRedirectRoutes: redirectRuleCount.length > 0,
-        hasPomeriumRoutes: pomeriumRouteCount.length > 0,
+        hasPomeriumRoutes:
+          pomeriumRouteCount.length > 0 ||
+          domain.hostname.toLowerCase() === authenticateServiceHostname,
         hasSharedBackends: sharedBackendCount.length > 0,
       }, allCertificates),
     };
@@ -290,6 +363,14 @@ app.post("/", zValidator("json", createDomainSchema), async (c) => {
           dnsProviderId: data.acmeDnsProviderId,
           status: "pending",
         });
+
+        await db
+          .update(domains)
+          .set({
+            certificateId: certId,
+            updatedAt: new Date(),
+          })
+          .where(eq(domains.id, id));
 
         // Queue certificate issuance job
         try {
@@ -488,14 +569,16 @@ app.delete("/:id", async (c) => {
     }
 
     // Clean up certificate files before deleting domain
-    if (existing.certificate?.certPath) {
-      const certDir = dirname(existing.certificate.certPath);
+    const certDir = getManagedCertificateDirectory(existing.certificate?.certPath);
+    if (certDir) {
       try {
         await rm(certDir, { recursive: true, force: true });
         console.log(`[Domains] Deleted certificate directory: ${certDir}`);
       } catch (cleanupError) {
         console.error("[Domains] Failed to delete certificate directory:", cleanupError);
       }
+    } else if (existing.certificate?.certPath) {
+      console.warn(`[Domains] Skipping unmanaged certificate path during delete: ${existing.certificate.certPath}`);
     }
 
     // Also delete the HAProxy PEM file

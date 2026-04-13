@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "@uni-proxy-manager/database";
 import { domains, certificates, backends, maintenanceWindows } from "@uni-proxy-manager/database/schema";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, sql } from "drizzle-orm";
 
 export function computeBackendStats(allBackends: Array<{ enabled: boolean; isHealthy: boolean }>) {
   return {
@@ -16,53 +16,77 @@ const app = new Hono();
 // Get dashboard stats
 app.get("/dashboard", async (c) => {
   try {
-    // Get all domains
-    const allDomains = await db.query.domains.findMany();
-
-    // Get all certificates
-    const allCertificates = await db.query.certificates.findMany();
-
-    // Get all backends
-    const allBackends = await db.query.backends.findMany();
-
-    // Get maintenance windows
     const now = new Date();
-    const activeMaintenance = await db.query.maintenanceWindows.findMany({
-      where: eq(maintenanceWindows.isActive, true),
-    });
+    const [
+      [domainStatsRow],
+      [certificateStatsRow],
+      [backendStatsRow],
+      [scheduledMaintenanceRow],
+    ] = await Promise.all([
+      db
+        .select({
+          total: sql<number>`COUNT(*)`,
+          active: sql<number>`COUNT(*) FILTER (WHERE ${domains.status} = 'active')`,
+          pending: sql<number>`COUNT(*) FILTER (WHERE ${domains.status} = 'pending')`,
+          disabled: sql<number>`COUNT(*) FILTER (WHERE ${domains.status} = 'disabled')`,
+          error: sql<number>`COUNT(*) FILTER (WHERE ${domains.status} = 'error')`,
+          domainsInMaintenance: sql<number>`COUNT(*) FILTER (WHERE ${domains.maintenanceEnabled} = true)`,
+        })
+        .from(domains),
+      db
+        .select({
+          total: sql<number>`COUNT(*)`,
+          active: sql<number>`COUNT(*) FILTER (WHERE ${certificates.status} = 'active')`,
+          pending: sql<number>`COUNT(*) FILTER (WHERE ${certificates.status} = 'pending')`,
+          expired: sql<number>`COUNT(*) FILTER (WHERE ${certificates.status} = 'expired')`,
+          failed: sql<number>`COUNT(*) FILTER (WHERE ${certificates.status} = 'failed')`,
+        })
+        .from(certificates),
+      db
+        .select({
+          total: sql<number>`COUNT(*)`,
+          healthy: sql<number>`COUNT(*) FILTER (WHERE ${backends.enabled} = true AND ${backends.isHealthy} = true)`,
+          unhealthy: sql<number>`COUNT(*) FILTER (WHERE ${backends.enabled} = true AND ${backends.isHealthy} = false)`,
+        })
+        .from(backends),
+      db
+        .select({
+          scheduledWindows: sql<number>`COUNT(*)`,
+        })
+        .from(maintenanceWindows)
+        .where(
+          and(
+            eq(maintenanceWindows.isActive, false),
+            gt(maintenanceWindows.scheduledStartAt, now)
+          )
+        ),
+    ]);
 
-    const scheduledMaintenance = await db.query.maintenanceWindows.findMany({
-      where: and(
-        eq(maintenanceWindows.isActive, false),
-        gt(maintenanceWindows.scheduledStartAt, now)
-      ),
-    });
-
-    // Calculate domain stats
     const domainStats = {
-      total: allDomains.length,
-      active: allDomains.filter(d => d.status === "active").length,
-      pending: allDomains.filter(d => d.status === "pending").length,
-      disabled: allDomains.filter(d => d.status === "disabled").length,
-      error: allDomains.filter(d => d.status === "error").length,
+      total: Number(domainStatsRow?.total) || 0,
+      active: Number(domainStatsRow?.active) || 0,
+      pending: Number(domainStatsRow?.pending) || 0,
+      disabled: Number(domainStatsRow?.disabled) || 0,
+      error: Number(domainStatsRow?.error) || 0,
     };
 
-    // Calculate certificate stats
     const certificateStats = {
-      total: allCertificates.length,
-      active: allCertificates.filter(c => c.status === "active").length,
-      pending: allCertificates.filter(c => c.status === "pending").length,
-      expired: allCertificates.filter(c => c.status === "expired").length,
-      failed: allCertificates.filter(c => c.status === "failed").length,
+      total: Number(certificateStatsRow?.total) || 0,
+      active: Number(certificateStatsRow?.active) || 0,
+      pending: Number(certificateStatsRow?.pending) || 0,
+      expired: Number(certificateStatsRow?.expired) || 0,
+      failed: Number(certificateStatsRow?.failed) || 0,
     };
 
-    // Calculate backend stats
-    const backendStats = computeBackendStats(allBackends);
+    const backendStats = {
+      total: Number(backendStatsRow?.total) || 0,
+      healthy: Number(backendStatsRow?.healthy) || 0,
+      unhealthy: Number(backendStatsRow?.unhealthy) || 0,
+    };
 
-    // Calculate maintenance stats
     const maintenanceStats = {
-      domainsInMaintenance: allDomains.filter(d => d.maintenanceEnabled).length,
-      scheduledWindows: scheduledMaintenance.length,
+      domainsInMaintenance: Number(domainStatsRow?.domainsInMaintenance) || 0,
+      scheduledWindows: Number(scheduledMaintenanceRow?.scheduledWindows) || 0,
     };
 
     return c.json({

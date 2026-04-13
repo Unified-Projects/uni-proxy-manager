@@ -12,20 +12,102 @@ import {
   sharedBackends,
   domainSharedBackends,
 } from "@uni-proxy-manager/database/schema";
-import { getCertsDir, getErrorPagesDir } from "@uni-proxy-manager/shared/config";
+import { getCertsDir } from "@uni-proxy-manager/shared/config";
 import { Queue } from "bullmq";
 import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { QUEUES } from "@uni-proxy-manager/queue";
 import type { HaproxyReloadJobData } from "@uni-proxy-manager/queue";
 import AdmZip from "adm-zip";
 import { readdir, readFile, writeFile, mkdir } from "fs/promises";
-import { join, resolve, normalize } from "path";
-import { nanoid } from "nanoid";
+import { join, resolve, normalize, isAbsolute, relative } from "path";
 import { eq } from "drizzle-orm";
 
 const app = new Hono();
 
 const EXPORT_VERSION = "1.0.0";
+const CERTIFICATE_PATH_FIELDS = ["certPath", "keyPath", "chainPath", "fullchainPath"] as const;
+
+function normalizeCertificatePath(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue || trimmedValue.includes("\0")) {
+    return null;
+  }
+
+  const certsDir = resolve(getCertsDir());
+
+  if (isAbsolute(trimmedValue)) {
+    const relativePath = relative(certsDir, resolve(trimmedValue)).replace(/\\/g, "/");
+    const normalizedRelativePath = normalize(relativePath).replace(/\\/g, "/");
+    const segments = normalizedRelativePath.split("/").filter(Boolean);
+
+    if (
+      normalizedRelativePath === "." ||
+      normalizedRelativePath.startsWith("..") ||
+      normalizedRelativePath.includes("/../") ||
+      segments.length < 2
+    ) {
+      return null;
+    }
+
+    return normalizedRelativePath;
+  }
+
+  const normalizedRelativePath = normalize(trimmedValue).replace(/\\/g, "/");
+  const segments = normalizedRelativePath.split("/").filter(Boolean);
+
+  if (
+    normalizedRelativePath === "." ||
+    normalizedRelativePath.startsWith("..") ||
+    normalizedRelativePath.includes("/../") ||
+    normalizedRelativePath.startsWith("/") ||
+    segments.length < 2
+  ) {
+    return null;
+  }
+
+  const resolvedPath = resolve(certsDir, normalizedRelativePath);
+  const relativePath = relative(certsDir, resolvedPath).replace(/\\/g, "/");
+  if (
+    relativePath === "." ||
+    relativePath.startsWith("..") ||
+    relativePath.includes("/../")
+  ) {
+    return null;
+  }
+
+  return normalizedRelativePath;
+}
+
+function sanitizeImportedCertificate(
+  cert: Record<string, unknown>,
+  warnings: string[]
+): Record<string, unknown> {
+  const sanitizedCert: Record<string, unknown> = { ...cert };
+
+  for (const field of CERTIFICATE_PATH_FIELDS) {
+    if (sanitizedCert[field] == null) {
+      sanitizedCert[field] = null;
+      continue;
+    }
+
+    const normalizedPath = normalizeCertificatePath(sanitizedCert[field]);
+    if (!normalizedPath) {
+      warnings.push(
+        `Certificate ${String(cert.id ?? "unknown")} imported without ${field}: only managed cert-volume-relative paths are accepted`
+      );
+      sanitizedCert[field] = null;
+      continue;
+    }
+
+    sanitizedCert[field] = normalizedPath;
+  }
+
+  return sanitizedCert;
+}
 
 // GET /export — export settings as ZIP
 app.get("/export", async (c) => {
@@ -263,7 +345,7 @@ app.post("/import", async (c) => {
     let certImported = 0;
     let certSkipped = 0;
     for (const _cert of certificatesData) {
-      const cert = coerceDates(_cert);
+      const cert = sanitizeImportedCertificate(coerceDates(_cert), warnings);
       try {
         await db.insert(certificates).values(cert as never).onConflictDoNothing();
         certImported++;

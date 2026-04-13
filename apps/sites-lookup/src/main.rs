@@ -19,8 +19,8 @@ pub struct AppState {
     pub cache_ttl: u64,
     pub executor_endpoint: String,
     pub executor_secret: String,
-    /// Secret for authenticating /invalidate endpoint (optional, if empty invalidate is open)
-    pub invalidate_secret: Option<String>,
+    /// Secret for authenticating /invalidate endpoint.
+    pub invalidate_secret: String,
     pub http_client: Client<hyper_util::client::legacy::connect::HttpConnector, Body>,
     pub executor_timeout_secs: u64,
 }
@@ -78,18 +78,18 @@ async fn main() -> anyhow::Result<()> {
         panic!("SITES_EXECUTOR_SECRET cannot be empty - this is required for secure communication with the executor");
     }
 
-    // SECURITY: Optional secret for /invalidate endpoint authentication
-    // If set, /invalidate requires Bearer token matching this secret
+    // SECURITY: Require a secret for the /invalidate endpoint.
     let invalidate_secret = env::var("SITES_INVALIDATE_SECRET")
         .or_else(|_| env::var("UNI_PROXY_MANAGER_API_KEY"))
         .ok()
-        .filter(|s| !s.is_empty());
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .expect(
+            "SITES_INVALIDATE_SECRET or UNI_PROXY_MANAGER_API_KEY must be set - \
+             /invalidate must never run without authentication",
+        );
 
-    if invalidate_secret.is_none() {
-        tracing::warn!("SECURITY WARNING: SITES_INVALIDATE_SECRET or UNI_PROXY_MANAGER_API_KEY not set - /invalidate endpoint is UNPROTECTED");
-    } else {
-        tracing::info!("Invalidate endpoint authentication enabled");
-    }
+    tracing::info!("Invalidate endpoint authentication enabled");
 
     tracing::info!("Executor endpoint: {}", executor_endpoint);
 

@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { testClient } from "../setup/test-client";
-import { clearDatabase, closeTestDb } from "../setup/test-db";
+import { testDb, clearDatabase, closeTestDb } from "../setup/test-db";
 import {
   createDomainFixture,
   createBackendFixture,
   createSharedBackendFixture,
 } from "../setup/fixtures";
+import AdmZip from "adm-zip";
+import * as schema from "../../../packages/database/src/schema";
+import { eq } from "drizzle-orm";
 
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]); // PK\x03\x04
 
@@ -273,6 +276,62 @@ describe("Settings Export / Import API", () => {
       // The reload queued flag may or may not be present depending on implementation
       // but the import itself should succeed
       expect(res.body.imported).toBeDefined();
+    });
+
+    it("should strip unsafe imported certificate paths before persisting", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({
+          hostname: "import-cert.example.com",
+          sslEnabled: false,
+          forceHttps: false,
+        })
+      );
+
+      const zip = new AdmZip();
+      zip.addFile("manifest.json", Buffer.from(JSON.stringify({ version: "1.0.0" })));
+      zip.addFile(
+        "data/certificates.json",
+        Buffer.from(JSON.stringify([
+          {
+            id: "imported-cert",
+            domainId: domainRes.body.domain.id,
+            commonName: "import-cert.example.com",
+            source: "manual",
+            status: "active",
+            certPath: "../../outside/cert.pem",
+            keyPath: "/tmp/imported/key.pem",
+            chainPath: "chain.pem",
+            fullchainPath: "../fullchain.pem",
+          },
+        ]))
+      );
+
+      const formData = new FormData();
+      formData.append(
+        "file",
+        new File([zip.toBuffer()], "cert-import.zip", { type: "application/zip" })
+      );
+      formData.append("overwriteExisting", "true");
+      formData.append("importCertFiles", "false");
+      formData.append("importSensitiveData", "false");
+
+      const response = await testClient.postForm<{
+        warnings: string[];
+      }>("/api/settings/import", formData);
+
+      expect(response.status).toBe(200);
+      expect(response.body.warnings.some((warning) => warning.includes("imported without certPath"))).toBe(true);
+
+      const importedCert = await testDb.query.certificates.findFirst({
+        where: eq(schema.certificates.id, "imported-cert"),
+      });
+
+      expect(importedCert).toBeDefined();
+      expect(importedCert!.certPath).toBeNull();
+      expect(importedCert!.keyPath).toBeNull();
+      expect(importedCert!.chainPath).toBeNull();
+      expect(importedCert!.fullchainPath).toBeNull();
     });
   });
 });

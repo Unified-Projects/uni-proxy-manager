@@ -10,10 +10,85 @@ import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { QUEUES, type CertificateIssueJobData, type CertificateRenewalJobData } from "@uni-proxy-manager/queue";
 import { getAcmeConfig, getCertsDir } from "@uni-proxy-manager/shared/config";
 import { writeFile, mkdir, rm } from "fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, isAbsolute, normalize, relative, resolve } from "path";
 import { X509Certificate } from "crypto";
 
 const app = new Hono();
+
+function normalizeAltNames(altNames: string[] | null | undefined, commonName: string): string[] {
+  const normalized = new Set<string>();
+  const canonicalCommonName = commonName.trim().toLowerCase();
+
+  for (const altName of altNames ?? []) {
+    const trimmed = altName.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const normalizedName = trimmed.toLowerCase();
+    if (normalizedName === canonicalCommonName) {
+      continue;
+    }
+
+    normalized.add(trimmed);
+  }
+
+  return Array.from(normalized);
+}
+
+function altNamesEqual(left: string[] | null | undefined, right: string[] | null | undefined): boolean {
+  const leftNames = [...(left ?? [])]
+    .map((name) => name.trim().toLowerCase())
+    .sort();
+  const rightNames = [...(right ?? [])]
+    .map((name) => name.trim().toLowerCase())
+    .sort();
+
+  if (leftNames.length !== rightNames.length) {
+    return false;
+  }
+
+  return leftNames.every((name, index) => name === rightNames[index]);
+}
+
+function getManagedCertificateDirectory(certPath: string | null | undefined): string | null {
+  if (!certPath || typeof certPath !== "string" || certPath.includes("\0")) {
+    return null;
+  }
+
+  const certsDir = resolve(getCertsDir());
+  const normalizedPath = isAbsolute(certPath)
+    ? relative(certsDir, resolve(certPath)).replace(/\\/g, "/")
+    : normalize(certPath).replace(/\\/g, "/");
+  const segments = normalizedPath.split("/").filter(Boolean);
+
+  if (
+    normalizedPath === "." ||
+    normalizedPath.startsWith("..") ||
+    normalizedPath.includes("/../") ||
+    normalizedPath.startsWith("/") ||
+    segments.length < 2
+  ) {
+    return null;
+  }
+
+  const relativeDir = dirname(normalizedPath).replace(/\\/g, "/");
+  if (!relativeDir || relativeDir === "." || relativeDir === "/") {
+    return null;
+  }
+
+  const absoluteDir = resolve(certsDir, relativeDir);
+  const relativeDirCheck = relative(certsDir, absoluteDir).replace(/\\/g, "/");
+  if (
+    relativeDirCheck === "." ||
+    relativeDirCheck.startsWith("..") ||
+    relativeDirCheck.includes("/../")
+  ) {
+    return null;
+  }
+
+  return absoluteDir;
+}
 
 // Validation schemas
 const requestCertificateSchema = z.object({
@@ -26,6 +101,8 @@ const updateCertificateSchema = z.object({
   autoRenew: z.boolean().optional(),
   renewBeforeDays: z.number().int().min(1).max(90).optional(),
   dnsProviderId: z.string().optional(),
+  altNames: z.array(z.string()).optional(),
+  reissue: z.boolean().optional(),
 });
 
 // List all certificates
@@ -200,22 +277,102 @@ app.put("/:id", zValidator("json", updateCertificateSchema), async (c) => {
   try {
     const existing = await db.query.certificates.findFirst({
       where: eq(certificates.id, id),
+      with: {
+        domain: true,
+      },
     });
 
     if (!existing) {
       return c.json({ error: "Certificate not found" }, 404);
     }
 
+    const existingAltNames = normalizeAltNames(existing.altNames ?? [], existing.commonName);
+    const nextAltNames =
+      data.altNames === undefined
+        ? existingAltNames
+        : normalizeAltNames(data.altNames, existing.commonName);
+    const nextDnsProviderId =
+      data.dnsProviderId !== undefined ? data.dnsProviderId : existing.dnsProviderId;
+    const altNamesChanged = !altNamesEqual(existingAltNames, nextAltNames);
+    const shouldQueueReissue = data.reissue === true || altNamesChanged;
+
+    if ((data.dnsProviderId !== undefined || shouldQueueReissue) && !nextDnsProviderId) {
+      return c.json({ error: "No DNS provider configured for this certificate" }, 400);
+    }
+
+    if (nextDnsProviderId) {
+      const dnsProvider = await db.query.dnsProviders.findFirst({
+        where: eq(dnsProviders.id, nextDnsProviderId),
+      });
+
+      if (!dnsProvider) {
+        return c.json({ error: "DNS provider not found" }, 404);
+      }
+    }
+
+    const updateData: Partial<typeof certificates.$inferInsert> = {
+      autoRenew: data.autoRenew,
+      renewBeforeDays: data.renewBeforeDays,
+      dnsProviderId: nextDnsProviderId,
+      altNames: nextAltNames,
+      updatedAt: new Date(),
+    };
+
+    if (shouldQueueReissue) {
+      updateData.status = "pending";
+      updateData.lastError = null;
+      updateData.lastRenewalAttempt = new Date();
+    }
+
     const [updated] = await db
       .update(certificates)
-      .set({
-        ...data,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(certificates.id, id))
       .returning();
 
-    return c.json({ certificate: updated });
+    if (shouldQueueReissue) {
+      try {
+        const redis = getRedisClient();
+        const queue = new Queue<CertificateRenewalJobData>(QUEUES.CERTIFICATE_RENEWAL, {
+          connection: redis,
+        });
+
+        await queue.add(
+          `renew-${id}`,
+          {
+            certificateId: id,
+            domainId: existing.domainId,
+            hostname: existing.domain.hostname,
+            dnsProviderId: nextDnsProviderId!,
+            forceRenewal: true,
+          },
+          { jobId: `cert-reissue-${id}-${Date.now()}` }
+        );
+      } catch (queueError) {
+        console.error("[Certificates] Failed to queue certificate reissue:", queueError);
+
+        await db
+          .update(certificates)
+          .set({
+            autoRenew: existing.autoRenew,
+            renewBeforeDays: existing.renewBeforeDays,
+            altNames: existing.altNames ?? [],
+            dnsProviderId: existing.dnsProviderId,
+            status: existing.status,
+            lastError: existing.lastError,
+            lastRenewalAttempt: existing.lastRenewalAttempt,
+            updatedAt: new Date(),
+          })
+          .where(eq(certificates.id, id));
+
+        return c.json({ error: "Failed to queue certificate reissue" }, 500);
+      }
+    }
+
+    return c.json({
+      certificate: updated,
+      reissueQueued: shouldQueueReissue,
+    });
   } catch (error) {
     console.error("[Certificates] Error updating certificate:", error);
     return c.json({ error: "Failed to update certificate" }, 500);
@@ -518,14 +675,16 @@ app.delete("/:id", async (c) => {
     }
 
     // Clean up certificate files before deleting from database
-    if (existing.certPath) {
-      const certDir = dirname(existing.certPath);
+    const certDir = getManagedCertificateDirectory(existing.certPath);
+    if (certDir) {
       try {
         await rm(certDir, { recursive: true, force: true });
         console.log(`[Certificates] Deleted certificate directory: ${certDir}`);
       } catch (cleanupError) {
         console.error("[Certificates] Failed to delete certificate directory:", cleanupError);
       }
+    } else if (existing.certPath) {
+      console.warn(`[Certificates] Skipping unmanaged certificate path during delete: ${existing.certPath}`);
     }
 
     // Also delete the HAProxy PEM file

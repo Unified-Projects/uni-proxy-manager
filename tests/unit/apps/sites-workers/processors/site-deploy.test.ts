@@ -94,6 +94,7 @@ describe("Site Deploy Processor", () => {
         deploymentId: "deploy-456",
         targetSlot: "green",
         artifactPath: "local:/storage/functions/deploy-456/artifact.tar.gz",
+        renderMode: "ssr",
         runtimeConfig: {
           cpus: 1,
           memoryMb: 512,
@@ -103,6 +104,7 @@ describe("Site Deploy Processor", () => {
         runtimePath: ".next/standalone",
       };
 
+      expect(jobData.renderMode).toBe("ssr");
       expect(jobData.entryPoint).toBe("server.js");
       expect(jobData.runtimePath).toBe(".next/standalone");
     });
@@ -230,6 +232,8 @@ describe("Site Deploy Processor", () => {
           return isStatic ? "bash helpers/server.sh" : "bash helpers/sveltekit/server.sh";
         case "static":
           return "bash helpers/server.sh";
+        case "custom":
+          return 'node "dist/server.js"';
         default:
           return "bash helpers/server.sh";
       }
@@ -253,6 +257,22 @@ describe("Site Deploy Processor", () => {
     it("should use static server for static sites", () => {
       const command = getStartCommand("static", false);
       expect(command).toBe("bash helpers/server.sh");
+    });
+
+    it("should use the configured runtime target for custom sites", () => {
+      const command = getStartCommand("custom", false);
+      expect(command).toBe('node "dist/server.js"');
+    });
+
+    it("should honor detected render mode over stored metadata", () => {
+      const siteRenderMode = "ssg";
+      const jobRenderMode = "ssr";
+      const effectiveRenderMode = jobRenderMode || siteRenderMode;
+
+      expect(effectiveRenderMode).toBe("ssr");
+      expect(getStartCommand("nextjs", effectiveRenderMode === "ssg")).toBe(
+        "bash helpers/next-js/server.sh"
+      );
     });
   });
 

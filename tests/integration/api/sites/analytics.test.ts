@@ -246,6 +246,44 @@ describe("Site Analytics API", () => {
       expect(response.status).toBe(200);
       expect(response.body.data).toEqual([]);
     });
+
+    it("should aggregate multiple records into the same time bucket", async () => {
+      const baseTime = new Date();
+      baseTime.setMinutes(10, 0, 0);
+
+      await testDb.insert(schema.siteAnalytics).values([
+        {
+          id: `analytics-${testSiteId}-bucket-1`,
+          ...createSiteAnalyticsFixture(testSiteId, undefined, {
+            timestamp: new Date(baseTime),
+            pageViews: 120,
+            uniqueVisitors: 80,
+          }),
+        },
+        {
+          id: `analytics-${testSiteId}-bucket-2`,
+          ...createSiteAnalyticsFixture(testSiteId, undefined, {
+            timestamp: new Date(baseTime.getTime() + 20 * 60 * 1000),
+            pageViews: 30,
+            uniqueVisitors: 20,
+          }),
+        },
+      ]);
+
+      const start = new Date(baseTime.getTime() - 5 * 60 * 1000).toISOString();
+      const end = new Date(baseTime.getTime() + 30 * 60 * 1000).toISOString();
+
+      const response = await testClient.get<{
+        data: Array<{ timestamp: string; pageViews: number; uniqueVisitors: number }>;
+      }>(`/api/site-analytics/${testSiteId}/visitors?start=${start}&end=${end}&interval=1h`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toMatchObject({
+        pageViews: 150,
+        uniqueVisitors: 100,
+      });
+    });
   });
 
   // ============================================================================
@@ -436,6 +474,35 @@ describe("Site Analytics API", () => {
       expect(response.status).toBe(200);
       const rootPage = response.body.pages.find(p => p.path === "/");
       expect(rootPage).toBeDefined();
+    });
+
+    it("should aggregate page counts across rows before applying the limit", async () => {
+      const timestamp = new Date();
+
+      await testDb.insert(schema.siteAnalytics).values([
+        {
+          id: `analytics-${testSiteId}-pages-1`,
+          ...createSiteAnalyticsFixture(testSiteId, undefined, {
+            timestamp,
+          }),
+          paths: { "/": 5, "/about": 2 },
+        },
+        {
+          id: `analytics-${testSiteId}-pages-2`,
+          ...createSiteAnalyticsFixture(testSiteId, undefined, {
+            timestamp: new Date(timestamp.getTime() + 60 * 1000),
+          }),
+          paths: { "/": 3, "/contact": 4 },
+        },
+      ]);
+
+      const response = await testClient.get<{
+        pages: Array<{ path: string; count: number }>;
+      }>(`/api/site-analytics/${testSiteId}/pages?limit=2`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.pages[0]).toEqual({ path: "/", count: 8 });
+      expect(response.body.pages).toHaveLength(2);
     });
   });
 

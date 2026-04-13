@@ -23,11 +23,31 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { testClient } from "../../setup/test-client";
 import { testDb, clearDatabase, closeTestDb } from "../../setup/test-db";
-import { clearRedisQueues } from "../../setup/test-redis";
+import { clearRedisQueues, getQueueJobs } from "../../setup/test-redis";
 import { createSiteFixture } from "../../setup/fixtures";
 import * as schema from "../../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import archiver from "archiver";
+import { QUEUES, type HaproxySiteConfigJobData, type SiteBuildJobData } from "@uni-proxy-manager/queue";
+
+async function createPlainStaticZipFile(): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const chunks: Buffer[] = [];
+
+    archive.on("data", (chunk) => chunks.push(chunk));
+    archive.on("end", () => {
+      const buffer = Buffer.concat(chunks);
+      const blob = new Blob([buffer], { type: "application/zip" });
+      resolve(new File([blob], "plain-static.zip", { type: "application/zip" }));
+    });
+    archive.on("error", reject);
+
+    archive.append("<!doctype html><html><body>hello</body></html>", { name: "index.html" });
+    archive.finalize();
+  });
+}
 
 describe("Deployments API", () => {
   let testSiteId: string;
@@ -101,6 +121,42 @@ describe("Deployments API", () => {
     it("should return 404 for non-existent site", async () => {
       const response = await testClient.post("/api/sites/nonexistent-id/deploy");
       expect(response.status).toBe(404);
+    });
+
+    it("should keep static redeploy jobs free of implicit node commands", async () => {
+      const staticSiteRes = await testClient.post<{ site: any }>(
+        "/api/sites",
+        createSiteFixture({
+          framework: "static",
+          renderMode: "ssg",
+        })
+      );
+      const staticSiteId = staticSiteRes.body.site.id;
+
+      const uploadForm = new FormData();
+      uploadForm.append("file", await createPlainStaticZipFile());
+
+      const uploadRes = await testClient.postForm<{ deployment: { id: string } }>(
+        `/api/sites/${staticSiteId}/upload`,
+        uploadForm
+      );
+      expect(uploadRes.status).toBe(200);
+
+      await clearRedisQueues();
+
+      const response = await testClient.post<{ deployment: { id: string } }>(
+        `/api/sites/${staticSiteId}/deploy`
+      );
+
+      expect(response.status).toBe(200);
+
+      const queuedJobs = await getQueueJobs<SiteBuildJobData>(QUEUES.SITE_BUILD);
+      const queuedJob = queuedJobs.find((job) => job.data.deploymentId === response.body.deployment.id);
+
+      expect(queuedJob).toBeDefined();
+      expect(queuedJob?.data.framework).toBe("static");
+      expect(queuedJob?.data.buildCommand).toBeUndefined();
+      expect(queuedJob?.data.installCommand).toBeUndefined();
     });
   });
 
@@ -413,6 +469,28 @@ describe("Deployments API", () => {
       expect(response.status).toBe(200);
       expect(response.body.deployment.isActive).toBe(true);
       expect(response.body.message).toContain("promoted");
+    });
+
+    it("should enqueue a haproxy site-config update job", async () => {
+      const deployment = await createDeploymentInDb(testSiteId, {
+        status: "live",
+        isActive: false,
+        slot: "green",
+      });
+
+      const response = await testClient.post(`/api/deployments/${deployment.id}/promote`);
+
+      expect(response.status).toBe(200);
+
+      const queuedJobs = await getQueueJobs<HaproxySiteConfigJobData>(QUEUES.HAPROXY_SITE_CONFIG);
+      const queuedJob = queuedJobs.at(-1);
+
+      expect(queuedJob).toBeDefined();
+      expect(queuedJob?.data).toEqual({
+        siteId: testSiteId,
+        activeSlot: "green",
+        action: "update",
+      });
     });
 
     it("should return 404 for non-existent deployment", async () => {

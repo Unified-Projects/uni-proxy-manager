@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,21 +13,40 @@ import {
   FileKey,
   Link2,
   AlertCircle,
+  Edit,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Badge,
   Button,
   Card,
   CardContent,
   CardDescription,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Label,
   CardHeader,
   CardTitle,
   Skeleton,
   Separator,
+  Textarea,
   useToast,
 } from "@uni-proxy-manager/ui";
-import { useCertificate, useDeleteCertificate, useRenewCertificate } from "@/hooks/use-certificates";
+import {
+  formatCertificateAltNamesInput,
+  parseCertificateAltNamesInput,
+  useCertificate,
+  useDeleteCertificate,
+  useRenewCertificate,
+  useUpdateCertificate,
+} from "@/hooks/use-certificates";
 
 const statusColors: Record<string, string> = {
   active: "bg-green-500/10 text-green-500",
@@ -47,9 +66,21 @@ export default function CertificateDetailPage() {
   const { data: certificate, isLoading, error } = useCertificate(certificateId);
   const deleteCertificate = useDeleteCertificate();
   const renewCertificate = useRenewCertificate();
+  const updateCertificate = useUpdateCertificate();
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRenewing, setIsRenewing] = useState(false);
+  const [isEditDomainsOpen, setIsEditDomainsOpen] = useState(false);
+  const [isSavingDomains, setIsSavingDomains] = useState(false);
+  const [editedAltNames, setEditedAltNames] = useState("");
+
+  useEffect(() => {
+    if (!certificate || !isEditDomainsOpen) {
+      return;
+    }
+
+    setEditedAltNames(formatCertificateAltNamesInput(certificate.altNames));
+  }, [certificate, isEditDomainsOpen]);
 
   const handleDownload = (type: "cert" | "key" | "chain" | "fullchain") => {
     if (!certificate) return;
@@ -71,13 +102,20 @@ export default function CertificateDetailPage() {
       return;
     }
 
-    window.open(`/api/certificates/${certificateId}/download/${type}`, "_blank");
+    window.open(
+      `/api/certificates/${certificateId}/download/${type}`,
+      "_blank",
+    );
   };
 
   const handleDelete = async () => {
     if (!certificate) return;
 
-    if (!confirm(`Are you sure you want to delete the certificate for ${certificate.commonName}?`)) {
+    if (
+      !confirm(
+        `Are you sure you want to delete the certificate for ${certificate.commonName}?`,
+      )
+    ) {
       return;
     }
 
@@ -92,7 +130,10 @@ export default function CertificateDetailPage() {
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to delete certificate",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete certificate",
         variant: "destructive",
       });
       setIsDeleting(false);
@@ -102,8 +143,13 @@ export default function CertificateDetailPage() {
   const handleForceRenewal = async () => {
     if (!certificate) return;
 
-    const action = certificate.status === "failed" ? "retry issuance" : "force renewal";
-    if (!confirm(`Are you sure you want to ${action} for ${certificate.commonName}?`)) {
+    const action =
+      certificate.status === "failed" ? "retry issuance" : "force renewal";
+    if (
+      !confirm(
+        `Are you sure you want to ${action} for ${certificate.commonName}?`,
+      )
+    ) {
       return;
     }
 
@@ -111,17 +157,71 @@ export default function CertificateDetailPage() {
     try {
       await renewCertificate.mutateAsync(certificateId);
       toast({
-        title: certificate.status === "failed" ? "Retry initiated" : "Renewal initiated",
+        title:
+          certificate.status === "failed"
+            ? "Retry initiated"
+            : "Renewal initiated",
         description: `Certificate ${action} has been queued for ${certificate.commonName}.`,
       });
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : `Failed to ${action}`,
+        description:
+          error instanceof Error ? error.message : `Failed to ${action}`,
         variant: "destructive",
       });
     } finally {
       setIsRenewing(false);
+    }
+  };
+
+  const handleEditDomains = () => {
+    if (!certificate) {
+      return;
+    }
+
+    setEditedAltNames(formatCertificateAltNamesInput(certificate.altNames));
+    setIsEditDomainsOpen(true);
+  };
+
+  const handleSaveDomains = async () => {
+    if (!certificate) {
+      return;
+    }
+
+    const altNames = parseCertificateAltNamesInput(
+      editedAltNames,
+      certificate.commonName,
+    );
+
+    setIsSavingDomains(true);
+
+    try {
+      await updateCertificate.mutateAsync({
+        id: certificateId,
+        data: {
+          altNames,
+          reissue: true,
+        },
+      });
+
+      setIsEditDomainsOpen(false);
+      toast({
+        title: "Certificate updated",
+        description:
+          "The certificate domain list was saved and a reissue has been queued.",
+      });
+    } catch (saveError) {
+      toast({
+        title: "Error",
+        description:
+          saveError instanceof Error
+            ? saveError.message
+            : "Failed to update the certificate domain list",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingDomains(false);
     }
   };
 
@@ -141,7 +241,9 @@ export default function CertificateDetailPage() {
             <div className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
               <span>
-                {error instanceof Error ? error.message : "Failed to load certificate"}
+                {error instanceof Error
+                  ? error.message
+                  : "Failed to load certificate"}
               </span>
             </div>
           </CardContent>
@@ -163,7 +265,10 @@ export default function CertificateDetailPage() {
   }
 
   const daysUntilExpiry = certificate.expiresAt
-    ? Math.floor((new Date(certificate.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    ? Math.floor(
+        (new Date(certificate.expiresAt).getTime() - Date.now()) /
+          (1000 * 60 * 60 * 24),
+      )
     : null;
 
   return (
@@ -171,7 +276,11 @@ export default function CertificateDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <Button variant="ghost" onClick={() => router.push("/certificates")} className="mb-2">
+          <Button
+            variant="ghost"
+            onClick={() => router.push("/certificates")}
+            className="mb-2"
+          >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Certificates
           </Button>
@@ -188,7 +297,9 @@ export default function CertificateDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Certificate Information</CardTitle>
-            <CardDescription>Details about this SSL/TLS certificate</CardDescription>
+            <CardDescription>
+              Details about this SSL/TLS certificate
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3">
@@ -207,7 +318,9 @@ export default function CertificateDetailPage() {
                   <Link2 className="h-4 w-4" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm text-muted-foreground">Alternative Names</p>
+                  <p className="text-sm text-muted-foreground">
+                    Alternative Names
+                  </p>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {certificate.altNames.map((name) => (
                       <Badge key={name} variant="outline" className="text-xs">
@@ -247,7 +360,9 @@ export default function CertificateDetailPage() {
                     : "Not set"}
                 </p>
                 {daysUntilExpiry !== null && (
-                  <p className={`text-sm ${daysUntilExpiry < 30 ? "text-orange-500" : "text-muted-foreground"}`}>
+                  <p
+                    className={`text-sm ${daysUntilExpiry < 30 ? "text-orange-500" : "text-muted-foreground"}`}
+                  >
                     {daysUntilExpiry > 0
                       ? `${daysUntilExpiry} days remaining`
                       : `Expired ${Math.abs(daysUntilExpiry)} days ago`}
@@ -265,7 +380,9 @@ export default function CertificateDetailPage() {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm text-muted-foreground">Fingerprint</p>
-                    <p className="font-mono text-xs break-all">{certificate.fingerprint}</p>
+                    <p className="font-mono text-xs break-all">
+                      {certificate.fingerprint}
+                    </p>
                   </div>
                 </div>
               </>
@@ -277,7 +394,9 @@ export default function CertificateDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Settings & Configuration</CardTitle>
-            <CardDescription>Auto-renewal and related information</CardDescription>
+            <CardDescription>
+              Auto-renewal and related information
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3">
@@ -303,11 +422,15 @@ export default function CertificateDetailPage() {
                   <Server className="h-4 w-4" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm text-muted-foreground">Related Domain</p>
+                  <p className="text-sm text-muted-foreground">
+                    Related Domain
+                  </p>
                   <Button
                     variant="link"
                     className="h-auto p-0 font-medium"
-                    onClick={() => router.push(`/domains/${certificate.domainId}`)}
+                    onClick={() =>
+                      router.push(`/domains/${certificate.domainId}`)
+                    }
                   >
                     {certificate.domain.hostname}
                   </Button>
@@ -323,7 +446,8 @@ export default function CertificateDetailPage() {
                 <div className="flex-1">
                   <p className="text-sm text-muted-foreground">DNS Provider</p>
                   <p className="font-medium">
-                    {certificate.dnsProvider.name} ({certificate.dnsProvider.type})
+                    {certificate.dnsProvider.name} (
+                    {certificate.dnsProvider.type})
                   </p>
                 </div>
               </div>
@@ -335,9 +459,13 @@ export default function CertificateDetailPage() {
                 <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <AlertCircle className="h-4 w-4 text-destructive" />
-                    <p className="text-sm font-medium text-destructive">Last Error</p>
+                    <p className="text-sm font-medium text-destructive">
+                      Last Error
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground">{certificate.lastError}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {certificate.lastError}
+                  </p>
                 </div>
               </>
             )}
@@ -353,6 +481,15 @@ export default function CertificateDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              onClick={handleEditDomains}
+              disabled={isSavingDomains}
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Domains & Reissue
+            </Button>
+
             <Button
               variant="outline"
               onClick={() => handleDownload("cert")}
@@ -383,9 +520,16 @@ export default function CertificateDetailPage() {
             <Button
               variant="outline"
               onClick={handleForceRenewal}
-              disabled={certificate.status === "issuing" || certificate.status === "pending" || isRenewing || renewCertificate.isPending}
+              disabled={
+                certificate.status === "issuing" ||
+                certificate.status === "pending" ||
+                isRenewing ||
+                renewCertificate.isPending
+              }
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${isRenewing ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${isRenewing ? "animate-spin" : ""}`}
+              />
               {isRenewing
                 ? "Processing..."
                 : certificate.status === "failed"
@@ -404,6 +548,71 @@ export default function CertificateDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isEditDomainsOpen} onOpenChange={setIsEditDomainsOpen}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Edit Certificate Domains</DialogTitle>
+            <DialogDescription>
+              Review the primary domain and update the additional names on this
+              certificate, then save to reissue it on the same certificate
+              record.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Alert>
+              <AlertTitle>Reissue will be triggered</AlertTitle>
+              <AlertDescription>
+                Saving this form updates the certificate's domain list and
+                starts a reissue. Domains using this certificate may briefly
+                show SSL issue status until the new certificate is active.
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-2">
+              <Label>Primary domain</Label>
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium">
+                {certificate.commonName}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="certificate-alt-names">Additional domains</Label>
+              <Textarea
+                id="certificate-alt-names"
+                value={editedAltNames}
+                onChange={(event) => setEditedAltNames(event.target.value)}
+                placeholder="www.example.com&#10;api.example.com&#10;*.staging.example.com"
+                className="min-h-[120px]"
+                disabled={isSavingDomains}
+              />
+              <p className="text-sm text-muted-foreground">
+                Enter one name per line or comma-separated. The primary domain
+                will be excluded from the SAN list automatically.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsEditDomainsOpen(false)}
+              disabled={isSavingDomains}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveDomains}
+              disabled={isSavingDomains}
+            >
+              {isSavingDomains ? "Saving..." : "Save & Reissue"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { testClient } from "../setup/test-client";
 import { clearDatabase, closeTestDb } from "../setup/test-db";
 import { createClusterNodeFixture } from "../setup/fixtures";
 
 describe("Cluster API", () => {
+  const originalFetch = global.fetch;
+
   beforeAll(async () => {
     await clearDatabase();
   });
@@ -14,6 +16,11 @@ describe("Cluster API", () => {
 
   beforeEach(async () => {
     await clearDatabase();
+    global.fetch = originalFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
   });
 
   // ---------------------------------------------------------------------------
@@ -29,6 +36,7 @@ describe("Cluster API", () => {
       expect(res.body.node.apiUrl).toBe(data.apiUrl);
       expect(res.body.node.status).toBe("unknown");
       expect(res.body.node.isLocal).toBe(false);
+      expect(res.body.node.apiKey).toBeUndefined();
     });
 
     it("should register a local node", async () => {
@@ -67,6 +75,16 @@ describe("Cluster API", () => {
       const res = await testClient.post("/api/cluster", withoutKey);
       expect(res.status).toBe(400);
     });
+
+    it("should reject apiUrl values with paths", async () => {
+      const res = await testClient.post("/api/cluster", {
+        ...createClusterNodeFixture(),
+        apiUrl: "http://node.example.com/base-path",
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("base origin");
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -86,6 +104,8 @@ describe("Cluster API", () => {
       const res = await testClient.get<{ nodes: any[] }>("/api/cluster");
       expect(res.status).toBe(200);
       expect(res.body.nodes).toHaveLength(2);
+      expect(res.body.nodes[0].apiKey).toBeUndefined();
+      expect(res.body.nodes[1].apiKey).toBeUndefined();
     });
   });
 
@@ -103,6 +123,7 @@ describe("Cluster API", () => {
       const res = await testClient.get<{ node: any }>(`/api/cluster/${id}`);
       expect(res.status).toBe(200);
       expect(res.body.node.id).toBe(id);
+      expect(res.body.node.apiKey).toBeUndefined();
     });
 
     it("should return 404 for non-existent id", async () => {
@@ -128,7 +149,7 @@ describe("Cluster API", () => {
       });
       expect(res.status).toBe(200);
       expect(res.body.node.name).toBe("updated-name");
-      expect(res.body.node.apiKey).toBe("new-secret-key");
+      expect(res.body.node.apiKey).toBeUndefined();
     });
 
     it("should return 404 for non-existent id", async () => {
@@ -214,6 +235,27 @@ describe("Cluster API", () => {
     it("should return 404 for non-existent id", async () => {
       const res = await testClient.post("/api/cluster/no-such-id/sync");
       expect(res.status).toBe(404);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /api/cluster/:id/status
+  // ---------------------------------------------------------------------------
+  describe("GET /api/cluster/:id/status", () => {
+    it("should refuse to forward credentials to public destinations", async () => {
+      const createRes = await testClient.post<{ node: any }>("/api/cluster", {
+        ...createClusterNodeFixture(),
+        apiUrl: "http://8.8.8.8",
+      });
+
+      global.fetch = vi.fn();
+
+      const res = await testClient.get(`/api/cluster/${createRes.body.node.id}/status`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.status).toBe("error");
+      expect(res.body.error).toContain("private or loopback");
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 });

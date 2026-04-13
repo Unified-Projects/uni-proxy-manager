@@ -5,6 +5,7 @@ import { ne } from "drizzle-orm";
 import { sendHaproxySocketCommand, getHaproxyInfo, getHaproxyStats } from "@uni-proxy-manager/shared/haproxy";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
+import { validateClusterApiDestination } from "./cluster";
 
 const app = new Hono();
 
@@ -43,7 +44,12 @@ async function fanOutCommand(command: string): Promise<NodeCommandResult[]> {
   await Promise.all(
     remoteNodes.map(async (node) => {
       try {
-        const response = await fetch(`${node.apiUrl}/api/haproxy/runtime`, {
+        const destination = await validateClusterApiDestination(node.apiUrl);
+        if (!destination.ok) {
+          throw new Error(destination.message);
+        }
+
+        const response = await fetch(`${destination.baseUrl}/api/haproxy/runtime`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -159,7 +165,12 @@ app.get("/info", async (c) => {
   await Promise.all(
     remoteNodes.map(async (node) => {
       try {
-        const response = await fetch(`${node.apiUrl}/api/haproxy/runtime`, {
+        const destination = await validateClusterApiDestination(node.apiUrl);
+        if (!destination.ok) {
+          throw new Error(destination.message);
+        }
+
+        const response = await fetch(`${destination.baseUrl}/api/haproxy/runtime`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -221,7 +232,12 @@ app.get("/stats", async (c) => {
   await Promise.all(
     remoteNodes.map(async (node) => {
       try {
-        const response = await fetch(`${node.apiUrl}/api/haproxy/runtime`, {
+        const destination = await validateClusterApiDestination(node.apiUrl);
+        if (!destination.ok) {
+          throw new Error(destination.message);
+        }
+
+        const response = await fetch(`${destination.baseUrl}/api/haproxy/runtime`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

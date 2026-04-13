@@ -329,7 +329,7 @@ export function SiteSettings({ site }: SiteSettingsProps) {
           </CardHeader>
           <CardContent>
             <EnvVariablesEditor
-              variables={envVars?.envVariables || site.envVariables || {}}
+              variables={envVars?.envVariables || {}}
               onSave={handleSaveEnv}
               isSaving={updateEnv.isPending}
             />

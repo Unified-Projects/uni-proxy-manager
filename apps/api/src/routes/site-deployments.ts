@@ -9,6 +9,7 @@ import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { S3Service } from "@uni-proxy-manager/shared/s3";
 import { rm } from "fs/promises";
 import { nanoid } from "nanoid";
+import { QUEUES, type HaproxySiteConfigJobData } from "@uni-proxy-manager/queue";
 
 const app = new Hono();
 
@@ -647,11 +648,13 @@ app.post("/:id/promote", async (c) => {
       .where(eq(deployments.id, id))
       .returning();
 
+    const activeSlot = deployment.slot || site.activeSlot || "blue";
+
     // Update site active slot and deployment
     await db
       .update(sites)
       .set({
-        activeSlot: deployment.slot,
+        activeSlot,
         activeDeploymentId: id,
         updatedAt: new Date(),
       })
@@ -660,10 +663,13 @@ app.post("/:id/promote", async (c) => {
     // Queue HAProxy config update
     try {
       const redis = getRedisClient();
-      const queue = new Queue("haproxy-config", { connection: redis });
+      const queue = new Queue<HaproxySiteConfigJobData>(QUEUES.HAPROXY_SITE_CONFIG, {
+        connection: redis,
+      });
       await queue.add("update-site-backend", {
         siteId: site.id,
-        activeSlot: deployment.slot,
+        activeSlot,
+        action: "update",
       });
     } catch (queueError) {
       console.error("[Deployments] Failed to queue HAProxy update:", queueError);

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -25,9 +28,14 @@ import type { CreatePomeriumIdpData, PomeriumIdpType } from "@/lib/types";
 interface CreateIdpDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  maxProvidersReached?: boolean;
 }
 
-export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
+export function CreateIdpDialog({
+  open,
+  onOpenChange,
+  maxProvidersReached = false,
+}: CreateIdpDialogProps) {
   const [type, setType] = useState<PomeriumIdpType>("google");
   const createIdp = useCreatePomeriumIdp();
 
@@ -46,6 +54,10 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
   });
 
   const onSubmit = async (data: CreatePomeriumIdpData) => {
+    if (maxProvidersReached) {
+      return;
+    }
+
     await createIdp.mutateAsync({
       ...data,
       type,
@@ -64,13 +76,27 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 overflow-y-auto flex-1 pr-2">
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="space-y-4 overflow-y-auto flex-1 pr-2"
+        >
+          {maxProvidersReached && (
+            <Alert>
+              <AlertTitle>Provider already configured</AlertTitle>
+              <AlertDescription>
+                Pomerium currently supports one OAuth provider. Edit or delete
+                the existing provider before creating a new one.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
               placeholder="My Google Auth"
               {...form.register("name", { required: true })}
+              disabled={maxProvidersReached}
             />
           </div>
 
@@ -80,12 +106,17 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
               id="displayName"
               placeholder="Sign in with Google"
               {...form.register("displayName")}
+              disabled={maxProvidersReached}
             />
           </div>
 
           <div className="space-y-2">
             <Label>Provider Type</Label>
-            <Select value={type} onValueChange={(v) => setType(v as PomeriumIdpType)}>
+            <Select
+              value={type}
+              onValueChange={(v) => setType(v as PomeriumIdpType)}
+              disabled={maxProvidersReached}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select provider type" />
               </SelectTrigger>
@@ -104,6 +135,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
               id="clientId"
               placeholder="your-client-id"
               {...form.register("credentials.clientId", { required: true })}
+              disabled={maxProvidersReached}
             />
           </div>
 
@@ -114,6 +146,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
               type="password"
               placeholder="your-client-secret"
               {...form.register("credentials.clientSecret", { required: true })}
+              disabled={maxProvidersReached}
             />
           </div>
 
@@ -124,6 +157,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
                 id="tenantId"
                 placeholder="your-tenant-id"
                 {...form.register("credentials.tenantId")}
+                disabled={maxProvidersReached}
               />
             </div>
           )}
@@ -135,6 +169,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
                 id="hostedDomain"
                 placeholder="example.com"
                 {...form.register("credentials.hostedDomain")}
+                disabled={maxProvidersReached}
               />
               <p className="text-sm text-muted-foreground">
                 Restrict to a specific Google Workspace domain.
@@ -149,6 +184,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
                 id="issuerUrl"
                 placeholder="https://your-provider.com"
                 {...form.register("credentials.issuerUrl")}
+                disabled={maxProvidersReached}
               />
             </div>
           )}
@@ -163,6 +199,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
             <Switch
               checked={form.watch("enabled")}
               onCheckedChange={(checked) => form.setValue("enabled", checked)}
+              disabled={maxProvidersReached}
             />
           </div>
 
@@ -176,6 +213,7 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
             <Switch
               checked={form.watch("isDefault")}
               onCheckedChange={(checked) => form.setValue("isDefault", checked)}
+              disabled={maxProvidersReached}
             />
           </div>
 
@@ -187,7 +225,10 @@ export function CreateIdpDialog({ open, onOpenChange }: CreateIdpDialogProps) {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createIdp.isPending}>
+            <Button
+              type="submit"
+              disabled={createIdp.isPending || maxProvidersReached}
+            >
               Create Provider
             </Button>
           </DialogFooter>

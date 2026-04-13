@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { Plus, MoreVertical, Trash2, Edit, TestTube, Star } from "lucide-react";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Card,
   CardContent,
   CardDescription,
@@ -23,11 +26,7 @@ import {
   TableRow,
   Skeleton,
 } from "@uni-proxy-manager/ui";
-import {
-  usePomeriumIdps,
-  useDeletePomeriumIdp,
-  useTestPomeriumIdp,
-} from "@/hooks";
+import { usePomeriumIdps, useTestPomeriumIdp } from "@/hooks";
 import type { PomeriumIdentityProvider } from "@/lib/types";
 import { CreateIdpDialog } from "./create-idp-dialog";
 import { EditIdpDialog } from "./edit-idp-dialog";
@@ -52,10 +51,11 @@ export function IdentityProvidersTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editIdp, setEditIdp] = useState<PomeriumIdentityProvider | null>(null);
   const [deleteIdp, setDeleteIdp] = useState<PomeriumIdentityProvider | null>(
-    null
+    null,
   );
 
   const testIdp = useTestPomeriumIdp();
+  const hasConfiguredProvider = (idps?.length ?? 0) >= 1;
 
   const handleTest = async (idp: PomeriumIdentityProvider) => {
     await testIdp.mutateAsync(idp.id);
@@ -86,15 +86,27 @@ export function IdentityProvidersTab() {
           <div>
             <CardTitle>Identity Providers</CardTitle>
             <CardDescription>
-              Configure authentication providers for user sign-in.
+              Configure authentication providers for user sign-in. Pomerium
+              currently supports one OAuth provider at a time.
             </CardDescription>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            disabled={hasConfiguredProvider}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add Provider
           </Button>
         </CardHeader>
         <CardContent>
+          <Alert className="mb-4">
+            <AlertTitle>Single provider limit</AlertTitle>
+            <AlertDescription>
+              Only one OAuth provider can be configured for Pomerium right now.
+              Edit or delete the existing provider to switch authentication.
+            </AlertDescription>
+          </Alert>
+
           {idps && idps.length > 0 ? (
             <Table>
               <TableHeader>
@@ -181,7 +193,11 @@ export function IdentityProvidersTab() {
         </CardContent>
       </Card>
 
-      <CreateIdpDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateIdpDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        maxProvidersReached={hasConfiguredProvider}
+      />
 
       {editIdp && (
         <EditIdpDialog

@@ -2,6 +2,7 @@ import { join } from "path";
 
 // Set environment variables for tests before any imports
 process.env.NODE_ENV = "test";
+process.env.UNI_PROXY_MANAGER_AUTH_ENABLED = "false";
 
 // Detect if running inside Docker (test-runner container sets these)
 const isDocker = !!process.env.DATABASE_URL?.includes("test-postgres");

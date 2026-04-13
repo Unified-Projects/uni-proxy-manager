@@ -9,6 +9,7 @@ import {
 import { checkPlaywrightAvailable } from "../setup/playwright-check";
 import * as schema from "../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
+import { createServer } from "http";
 
 let playwrightAvailable = false;
 
@@ -222,6 +223,55 @@ describe("Error Pages API", () => {
 
       expect(response.status).toBe(404);
     });
+
+    it.skipIf(!playwrightAvailable)(
+      "should block outbound network requests during preview generation",
+      async () => {
+        const createRes = await testClient.post<{ errorPage: any }>(
+          "/api/error-pages",
+          createErrorPageFixture("503")
+        );
+        const pageId = createRes.body.errorPage.id;
+
+        let requestCount = 0;
+        const server = createServer((_req, res) => {
+          requestCount++;
+          res.writeHead(200, { "Content-Type": "image/png" });
+          res.end("not-a-real-png");
+        });
+
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          server.close();
+          throw new Error("Failed to start preview test server");
+        }
+
+        try {
+          const zipFile = await createTestZipFile(
+            `<html><body><img src="http://127.0.0.1:${address.port}/track.png" alt="blocked" /></body></html>`
+          );
+          const response = await testClient.uploadFile<{ success: boolean }>(
+            `/api/error-pages/${pageId}/upload`,
+            zipFile
+          );
+
+          expect(response.status).toBe(200);
+          expect(response.body.success).toBe(true);
+          expect(requestCount).toBe(0);
+        } finally {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          });
+        }
+      }
+    );
   });
 
   describe("PUT /api/error-pages/:id", () => {

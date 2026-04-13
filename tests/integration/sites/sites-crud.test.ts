@@ -178,7 +178,13 @@ describe("Sites API", () => {
       expect(response.body.site.memoryMb).toBe(512);
       // Database stores with 2 decimal precision
       expect(response.body.site.cpuLimit).toBe("1.00");
-      expect(response.body.site.envVariables).toHaveProperty("API_URL");
+      expect(response.body.site.envVariables).toBeUndefined();
+
+      const envResponse = await testClient.get<{ envVariables: Record<string, string> }>(
+        `/api/sites/${siteId}/env`
+      );
+      expect(envResponse.status).toBe(200);
+      expect(envResponse.body.envVariables.API_URL).toBe("https://api.example.com");
     });
 
     it("should update build settings", async () => {

@@ -112,6 +112,26 @@ describe("Site Build Processor", () => {
       expect(jobData.outputDirectory).toBe("dist");
       expect(jobData.commitSha).toBe("abc123");
     });
+
+    it("should allow static jobs without install or build commands", () => {
+      const jobData: SiteBuildJobData = {
+        siteId: "site-123",
+        deploymentId: "deploy-456",
+        branch: "upload",
+        framework: "static",
+        nodeVersion: "20",
+        envVariables: {},
+        buildConfig: {
+          cpus: 1,
+          memoryMb: 2048,
+          timeoutSeconds: 300,
+        },
+      };
+
+      expect(jobData.framework).toBe("static");
+      expect(jobData.buildCommand).toBeUndefined();
+      expect(jobData.installCommand).toBeUndefined();
+    });
   });
 
   // ============================================================================

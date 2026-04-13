@@ -8,6 +8,7 @@ import { eq, desc } from "drizzle-orm";
 import { Queue } from "bullmq";
 import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { getGitHubApp, isGitHubAppConfigured } from "@uni-proxy-manager/shared/github";
+import { QUEUES } from "@uni-proxy-manager/queue";
 
 const app = new Hono();
 
@@ -200,7 +201,7 @@ app.post("/webhook", async (c) => {
             // Queue build job
             try {
               const redis = getRedisClient();
-              const queue = new Queue("site-build", { connection: redis });
+              const queue = new Queue(QUEUES.SITE_BUILD, { connection: redis });
 
               await queue.add(
                 `build-${deploymentId}`,
@@ -214,6 +215,11 @@ app.post("/webhook", async (c) => {
                   installCommand: site.installCommand || "npm install",
                   nodeVersion: site.nodeVersion || "20",
                   framework: site.framework,
+                  buildConfig: {
+                    cpus: parseFloat(site.buildCpus || "1.0"),
+                    memoryMb: site.buildMemoryMb || 2048,
+                    timeoutSeconds: site.buildTimeoutSeconds || 900,
+                  },
                 },
                 { jobId: `site-build-${deploymentId}` }
               );

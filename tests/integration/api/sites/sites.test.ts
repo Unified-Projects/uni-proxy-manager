@@ -120,7 +120,12 @@ describe("Sites API", () => {
       });
 
       expect(response.status).toBe(201);
-      expect(response.body.site.envVariables).toHaveProperty("API_URL");
+      expect(response.body.site.envVariables).toBeUndefined();
+
+      const envResponse = await testClient.get(`/api/sites/${response.body.site.id}/env`);
+      expect(envResponse.status).toBe(200);
+      expect(envResponse.body.envVariables.API_URL).toBe("https://api.example.com");
+      expect(envResponse.body.envVariables.SECRET_KEY).toBe("********");
     });
 
     it("should validate memory limits", async () => {
@@ -178,6 +183,9 @@ describe("Sites API", () => {
     it("should return site by ID", async () => {
       const createRes = await testClient.post("/api/sites", createSiteFixture({
         name: "Test Site",
+        envVariables: {
+          SECRET_TOKEN: "super-secret",
+        },
       }));
       const siteId = createRes.body.site.id;
 
@@ -186,6 +194,7 @@ describe("Sites API", () => {
       expect(response.status).toBe(200);
       expect(response.body.site.id).toBe(siteId);
       expect(response.body.site.name).toBe("Test Site");
+      expect(response.body.site.envVariables).toBeUndefined();
     });
 
     it("should return 404 for non-existent site", async () => {
@@ -262,7 +271,11 @@ describe("Sites API", () => {
       });
 
       expect(response.status).toBe(200);
-      expect(response.body.site.envVariables).toHaveProperty("NEW_VAR");
+      expect(response.body.site.envVariables).toBeUndefined();
+
+      const envResponse = await testClient.get(`/api/sites/${siteId}/env`);
+      expect(envResponse.status).toBe(200);
+      expect(envResponse.body.envVariables.NEW_VAR).toBe("new-value");
     });
 
     it("should return 404 for non-existent site", async () => {

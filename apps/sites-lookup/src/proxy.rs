@@ -5,10 +5,205 @@ use axum::{
     response::IntoResponse,
 };
 use http_body_util::BodyExt;
+use std::collections::HashMap;
+use std::fs::File as StdFile;
+use std::io::{self, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio_util::io::ReaderStream;
 
 use crate::{analytics, cache, db, AppState};
+
+const MULTIPART_SEARCH_CHUNK_SIZE: usize = 64 * 1024;
+const MULTIPART_HEADER_SCAN_LIMIT: u64 = 64 * 1024;
+
+struct ParsedExecutorResponse {
+    status_code: u16,
+    response_headers: HashMap<String, String>,
+    body_range: Option<(u64, u64)>,
+}
+
+fn add_text_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
+    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", name).as_bytes(),
+    );
+    body.extend_from_slice(value.as_bytes());
+    body.extend_from_slice(b"\r\n");
+}
+
+fn add_binary_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &[u8]) {
+    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", name).as_bytes(),
+    );
+    body.extend_from_slice(value);
+    body.extend_from_slice(b"\r\n");
+}
+
+fn create_spool_path() -> PathBuf {
+    std::env::temp_dir().join(format!("sites-lookup-executor-{}.multipart", uuid::Uuid::new_v4()))
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+fn find_sequence_in_file(file: &mut StdFile, needle: &[u8], start_offset: u64) -> io::Result<Option<u64>> {
+    if needle.is_empty() {
+        return Ok(Some(start_offset));
+    }
+
+    let overlap = needle.len().saturating_sub(1);
+    let mut buffer = vec![0_u8; MULTIPART_SEARCH_CHUNK_SIZE + overlap];
+    let mut carry_len = 0_usize;
+    let mut file_offset = start_offset;
+
+    file.seek(SeekFrom::Start(start_offset))?;
+
+    loop {
+        let read_len = file.read(&mut buffer[carry_len..carry_len + MULTIPART_SEARCH_CHUNK_SIZE])?;
+        if read_len == 0 {
+            return Ok(None);
+        }
+
+        let search_len = carry_len + read_len;
+        if let Some(found_at) = find_subsequence(&buffer[..search_len], needle) {
+            let base_offset = file_offset.saturating_sub(carry_len as u64);
+            return Ok(Some(base_offset + found_at as u64));
+        }
+
+        if overlap > 0 {
+            carry_len = overlap.min(search_len);
+            buffer.copy_within(search_len - carry_len..search_len, 0);
+        } else {
+            carry_len = 0;
+        }
+
+        file_offset += read_len as u64;
+    }
+}
+
+fn read_file_range(file: &mut StdFile, start: u64, end: u64) -> io::Result<Vec<u8>> {
+    let length = end.saturating_sub(start);
+    let mut bytes = vec![0_u8; length as usize];
+    file.seek(SeekFrom::Start(start))?;
+    file.read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn parse_part_name(headers: &str) -> Option<String> {
+    let name_start = headers.find("name=\"")?;
+    let value_start = name_start + 6;
+    let value_end = headers[value_start..].find('"')?;
+    Some(headers[value_start..value_start + value_end].to_string())
+}
+
+fn parse_executor_response_file(path: &Path, boundary: &str) -> io::Result<ParsedExecutorResponse> {
+    let mut file = StdFile::open(path)?;
+    let boundary_bytes = format!("--{}", boundary).into_bytes();
+    let header_separator = b"\r\n\r\n";
+
+    let mut status_code = 200_u16;
+    let mut response_headers = HashMap::new();
+    let mut body_range = None;
+
+    let mut current_boundary = match find_sequence_in_file(&mut file, &boundary_bytes, 0)? {
+        Some(position) => position,
+        None => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Executor multipart response missing boundary",
+            ))
+        }
+    };
+
+    while let Some(next_boundary) = find_sequence_in_file(
+        &mut file,
+        &boundary_bytes,
+        current_boundary + boundary_bytes.len() as u64,
+    )? {
+        let mut content_start = current_boundary + boundary_bytes.len() as u64;
+        let mut prefix = [0_u8; 2];
+
+        file.seek(SeekFrom::Start(content_start))?;
+        let first_read = file.read(&mut prefix)?;
+        if first_read >= 2 && prefix == [b'-', b'-'] {
+            break;
+        }
+        if first_read >= 2 && prefix == [b'\r', b'\n'] {
+            content_start += 2;
+        } else if first_read >= 1 && prefix[0] == b'\n' {
+            content_start += 1;
+        }
+
+        let header_scan_end = next_boundary.min(content_start + MULTIPART_HEADER_SCAN_LIMIT);
+        let header_scan = read_file_range(&mut file, content_start, header_scan_end)?;
+        let separator_pos = match find_subsequence(&header_scan, header_separator) {
+            Some(position) => position,
+            None => {
+                current_boundary = next_boundary;
+                continue;
+            }
+        };
+
+        let headers_bytes = &header_scan[..separator_pos];
+        let headers_str = String::from_utf8_lossy(headers_bytes);
+        let Some(part_name) = parse_part_name(&headers_str) else {
+            current_boundary = next_boundary;
+            continue;
+        };
+
+        let body_start = content_start + separator_pos as u64 + header_separator.len() as u64;
+        let mut body_end = next_boundary;
+
+        if body_end >= 2 {
+            let trailing = read_file_range(&mut file, body_end - 2, body_end)?;
+            if trailing == b"\r\n" {
+                body_end -= 2;
+            }
+        }
+
+        match part_name.as_str() {
+            "statusCode" => {
+                let bytes = read_file_range(&mut file, body_start, body_end)?;
+                let value = String::from_utf8_lossy(&bytes);
+                status_code = value.trim().parse().unwrap_or(200);
+            }
+            "headers" => {
+                let value = read_file_range(&mut file, body_start, body_end)?;
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&value) {
+                    if let Some(object) = json.as_object() {
+                        for (key, value) in object {
+                            if let Some(as_str) = value.as_str() {
+                                response_headers.insert(key.clone(), as_str.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            "body" => {
+                body_range = Some((body_start, body_end));
+            }
+            _ => {}
+        }
+
+        current_boundary = next_boundary;
+    }
+
+    Ok(ParsedExecutorResponse {
+        status_code,
+        response_headers,
+        body_range,
+    })
+}
 
 /// Proxy handler - intercepts all site requests and forwards to executor
 pub async fn proxy_handler(
@@ -142,33 +337,35 @@ pub async fn proxy_handler(
     let boundary = format!("----WebKitFormBoundary{}", uuid::Uuid::new_v4().simple());
     let mut form_body = Vec::new();
 
-    // Helper to add form field
-    fn add_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
-        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-        body.extend_from_slice(format!("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", name).as_bytes());
-        body.extend_from_slice(value.as_bytes());
-        body.extend_from_slice(b"\r\n");
-    }
-
-    add_field(&mut form_body, &boundary, "runtimeId", &route.runtime_id);
-    add_field(&mut form_body, &boundary, "path", &original_path);
-    add_field(&mut form_body, &boundary, "method", &original_method);
-    add_field(&mut form_body, &boundary, "headers", &serde_json::to_string(&original_headers).unwrap_or_default());
-    add_field(&mut form_body, &boundary, "image", &route.image);
-    add_field(&mut form_body, &boundary, "source", &route.source);
-    add_field(&mut form_body, &boundary, "entrypoint", &route.entrypoint);
-    add_field(&mut form_body, &boundary, "variables", &serde_json::to_string(&route.variables).unwrap_or_default());
-    add_field(&mut form_body, &boundary, "timeout", &route.timeout.to_string());
-    add_field(&mut form_body, &boundary, "cpus", &route.cpus.to_string());
-    add_field(&mut form_body, &boundary, "memory", &route.memory.to_string());
-    add_field(&mut form_body, &boundary, "version", "v5");
-    add_field(&mut form_body, &boundary, "runtimeEntrypoint", "");
-    add_field(&mut form_body, &boundary, "logging", "true");
-    add_field(&mut form_body, &boundary, "restartPolicy", "always");
+    add_text_field(&mut form_body, &boundary, "runtimeId", &route.runtime_id);
+    add_text_field(&mut form_body, &boundary, "path", &original_path);
+    add_text_field(&mut form_body, &boundary, "method", &original_method);
+    add_text_field(
+        &mut form_body,
+        &boundary,
+        "headers",
+        &serde_json::to_string(&original_headers).unwrap_or_default(),
+    );
+    add_text_field(&mut form_body, &boundary, "image", &route.image);
+    add_text_field(&mut form_body, &boundary, "source", &route.source);
+    add_text_field(&mut form_body, &boundary, "entrypoint", &route.entrypoint);
+    add_text_field(
+        &mut form_body,
+        &boundary,
+        "variables",
+        &serde_json::to_string(&route.variables).unwrap_or_default(),
+    );
+    add_text_field(&mut form_body, &boundary, "timeout", &route.timeout.to_string());
+    add_text_field(&mut form_body, &boundary, "cpus", &route.cpus.to_string());
+    add_text_field(&mut form_body, &boundary, "memory", &route.memory.to_string());
+    add_text_field(&mut form_body, &boundary, "version", "v5");
+    add_text_field(&mut form_body, &boundary, "runtimeEntrypoint", "");
+    add_text_field(&mut form_body, &boundary, "logging", "true");
+    add_text_field(&mut form_body, &boundary, "restartPolicy", "always");
 
     // Add body if not empty
     if !body_bytes.is_empty() {
-        add_field(&mut form_body, &boundary, "body", &String::from_utf8_lossy(&body_bytes));
+        add_binary_field(&mut form_body, &boundary, "body", &body_bytes);
     }
 
     // End boundary
@@ -222,122 +419,118 @@ pub async fn proxy_handler(
                 .split("boundary=")
                 .nth(1)
                 .unwrap_or("")
+                .trim_matches('"')
                 .to_string();
 
-            // Read full response body
-            let body_bytes = match resp.into_body().collect().await {
-                Ok(collected) => collected.to_bytes(),
-                Err(e) => {
-                    tracing::error!("Failed to read executor response: {}", e);
+            let spool_path = create_spool_path();
+            let mut spool_file = match File::create(&spool_path).await {
+                Ok(file) => file,
+                Err(error) => {
+                    tracing::error!("Failed to create executor spool file: {}", error);
                     return Response::builder()
                         .status(StatusCode::BAD_GATEWAY)
-                        .body(Body::from("Failed to read executor response"))
+                        .body(Body::from("Failed to spool executor response"))
                         .unwrap();
                 }
             };
 
-            // Parse multipart response in binary mode to preserve body content
-            let mut status_code: u16 = 200;
-            let mut response_headers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-            let mut response_body: Vec<u8> = Vec::new();
-
-            // Find boundary positions in binary data
-            let boundary_bytes = format!("--{}", boundary).into_bytes();
-            let mut parts: Vec<(usize, usize)> = Vec::new();
-            let mut i = 0;
-            while i <= body_bytes.len().saturating_sub(boundary_bytes.len()) {
-                if body_bytes[i..].starts_with(&boundary_bytes) {
-                    parts.push((i, i + boundary_bytes.len()));
-                    i += boundary_bytes.len();
-                } else {
-                    i += 1;
-                }
-            }
-
-            // Parse each part between boundaries
-            for window in parts.windows(2) {
-                let (_, start) = window[0];
-                let (end, _) = window[1];
-
-                // Skip CRLF after boundary
-                let mut content_start = start;
-                if content_start < body_bytes.len() && body_bytes.get(content_start) == Some(&b'\r') {
-                    content_start += 1;
-                }
-                if content_start < body_bytes.len() && body_bytes.get(content_start) == Some(&b'\n') {
-                    content_start += 1;
-                }
-
-                // Find CRLFCRLF separator between headers and body
-                let part_data = &body_bytes[content_start..end];
-                let mut header_end = None;
-                for j in 0..part_data.len().saturating_sub(3) {
-                    if part_data[j..].starts_with(b"\r\n\r\n") {
-                        header_end = Some(j);
-                        break;
+            let mut executor_body = resp.into_body();
+            while let Some(frame_result) = executor_body.frame().await {
+                let frame = match frame_result {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        tracing::error!("Failed to read executor response frame: {}", error);
+                        let _ = tokio::fs::remove_file(&spool_path).await;
+                        return Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(Body::from("Failed to read executor response"))
+                            .unwrap();
                     }
-                }
+                };
 
-                if let Some(sep) = header_end {
-                    let headers_bytes = &part_data[..sep];
-                    let headers_str = String::from_utf8_lossy(headers_bytes);
-
-                    // Body starts after CRLFCRLF
-                    let body_start = sep + 4;
-                    let mut body_end = part_data.len();
-                    // Remove trailing CRLF
-                    if body_end >= 2 && part_data[body_end - 2] == b'\r' && part_data[body_end - 1] == b'\n' {
-                        body_end -= 2;
-                    }
-
-                    // Extract field name
-                    if let Some(name_match) = headers_str.find("name=\"") {
-                        let name_start = name_match + 6;
-                        if let Some(name_end) = headers_str[name_start..].find('"') {
-                            let name = &headers_str[name_start..name_start + name_end];
-                            let field_body = &part_data[body_start..body_end];
-
-                            match name {
-                                "statusCode" => {
-                                    let val_str = String::from_utf8_lossy(field_body);
-                                    status_code = val_str.trim().parse().unwrap_or(200);
-                                }
-                                "headers" => {
-                                    let val_str = String::from_utf8_lossy(field_body);
-                                    if let Ok(headers_json) = serde_json::from_str::<serde_json::Value>(&val_str) {
-                                        if let Some(obj) = headers_json.as_object() {
-                                            for (k, v) in obj {
-                                                if let Some(val) = v.as_str() {
-                                                    response_headers.insert(k.clone(), val.to_string());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                "body" => {
-                                    // Keep body as raw bytes to preserve binary content
-                                    response_body = field_body.to_vec();
-                                }
-                                _ => {} // Ignore logs, errors, duration, etc.
-                            }
-                        }
+                if let Some(data) = frame.data_ref() {
+                    if let Err(error) = spool_file.write_all(data).await {
+                        tracing::error!("Failed to write executor response to spool file: {}", error);
+                        let _ = tokio::fs::remove_file(&spool_path).await;
+                        return Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(Body::from("Failed to spool executor response"))
+                            .unwrap();
                     }
                 }
             }
+
+            if let Err(error) = spool_file.flush().await {
+                tracing::error!("Failed to flush executor spool file: {}", error);
+                let _ = tokio::fs::remove_file(&spool_path).await;
+                return Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(Body::from("Failed to finalize executor response"))
+                    .unwrap();
+            }
+
+            drop(spool_file);
+
+            let parsed = match parse_executor_response_file(&spool_path, &boundary) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    tracing::error!("Failed to parse executor multipart response: {}", error);
+                    let _ = tokio::fs::remove_file(&spool_path).await;
+                    return Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .body(Body::from("Failed to parse executor response"))
+                        .unwrap();
+                }
+            };
 
             // Build the actual HTTP response
-            let mut builder = Response::builder().status(status_code);
+            let mut builder = Response::builder().status(parsed.status_code);
 
-            for (key, value) in &response_headers {
+            for (key, value) in &parsed.response_headers {
                 // Skip transfer-encoding as we're sending the full body
                 if key.to_lowercase() != "transfer-encoding" {
                     builder = builder.header(key.as_str(), value.as_str());
                 }
             }
 
+            let (response_body_size, response_body) = if let Some((body_start, body_end)) = parsed.body_range {
+                let body_len = body_end.saturating_sub(body_start);
+                let mut response_file = match File::open(&spool_path).await {
+                    Ok(file) => file,
+                    Err(error) => {
+                        tracing::error!("Failed to reopen executor spool file: {}", error);
+                        let _ = tokio::fs::remove_file(&spool_path).await;
+                        return Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(Body::from("Failed to stream executor response"))
+                            .unwrap();
+                    }
+                };
+
+                if let Err(error) = response_file.seek(std::io::SeekFrom::Start(body_start)).await {
+                    tracing::error!("Failed to seek executor response body: {}", error);
+                    let _ = tokio::fs::remove_file(&spool_path).await;
+                    return Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .body(Body::from("Failed to stream executor response"))
+                        .unwrap();
+                }
+
+                let _ = std::fs::remove_file(&spool_path);
+
+                if !parsed.response_headers.contains_key("content-length") {
+                    builder = builder.header("content-length", body_len.to_string());
+                }
+
+                let response_stream = ReaderStream::new(response_file.take(body_len));
+                (body_len, Body::from_stream(response_stream))
+            } else {
+                let _ = tokio::fs::remove_file(&spool_path).await;
+                (0, Body::from(Vec::<u8>::new()))
+            };
+
             // Calculate response time and capture body size for analytics
             let response_time_ms = start_time.elapsed().as_millis() as u64;
-            let response_body_size = response_body.len() as u64;
 
             // Spawn async task to track analytics (non-blocking)
             let analytics_redis = state.redis.clone();
@@ -350,7 +543,7 @@ pub async fn proxy_handler(
                 referrer,
                 user_agent,
                 country,
-                response_code: status_code,
+                response_code: parsed.status_code,
                 response_time_ms,
                 bytes_in: request_body_size,
                 bytes_out: response_body_size,
@@ -365,7 +558,7 @@ pub async fn proxy_handler(
             });
 
             builder
-                .body(Body::from(response_body))
+                .body(response_body)
                 .unwrap_or_else(|_| {
                     Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -382,4 +575,57 @@ pub async fn proxy_handler(
         }
         }  // end Ok(result) => match result
     }  // end match timeout
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{add_binary_field, add_text_field, parse_executor_response_file};
+    use std::fs::File;
+    use std::io::Write;
+
+    #[test]
+    fn text_field_uses_expected_multipart_shape() {
+        let mut body = Vec::new();
+        add_text_field(&mut body, "boundary", "path", "/hello");
+
+        let expected = b"--boundary\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\n/hello\r\n";
+        assert_eq!(body, expected);
+    }
+
+    #[test]
+    fn binary_field_preserves_non_utf8_bytes() {
+        let payload = vec![0x00, 0x9f, 0xff, b'\r', b'\n', 0x80];
+        let mut body = Vec::new();
+        add_binary_field(&mut body, "boundary", "body", &payload);
+
+        assert!(body.windows(payload.len()).any(|window| window == payload.as_slice()));
+    }
+
+    #[test]
+    fn parses_spooled_multipart_response_and_tracks_body_range() {
+        let boundary = "boundary";
+        let body_payload = b"\x00binary-response\xff";
+        let mut temp_path = std::env::temp_dir();
+        temp_path.push(format!("sites-lookup-parser-{}.multipart", uuid::Uuid::new_v4()));
+
+        let mut temp_file = File::create(&temp_path).expect("failed to create temp file");
+        write!(temp_file, "--{boundary}\r\nContent-Disposition: form-data; name=\"body\"\r\nContent-Type: text/plain\r\n\r\n").unwrap();
+        temp_file.write_all(body_payload).unwrap();
+        write!(temp_file, "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"statusCode\"\r\nContent-Type: text/plain\r\n\r\n201\r\n").unwrap();
+        write!(temp_file, "--{boundary}\r\nContent-Disposition: form-data; name=\"headers\"\r\nContent-Type: application/json\r\n\r\n{{\"content-type\":\"application/octet-stream\"}}\r\n").unwrap();
+        write!(temp_file, "--{boundary}--\r\n").unwrap();
+        drop(temp_file);
+
+        let parsed = parse_executor_response_file(&temp_path, boundary).expect("failed to parse multipart file");
+        std::fs::remove_file(&temp_path).unwrap();
+
+        assert_eq!(parsed.status_code, 201);
+        assert_eq!(
+            parsed.response_headers.get("content-type"),
+            Some(&"application/octet-stream".to_string())
+        );
+
+        let (body_start, body_end) = parsed.body_range.expect("missing body range");
+        assert_eq!(body_end - body_start, body_payload.len() as u64);
+    }
 }

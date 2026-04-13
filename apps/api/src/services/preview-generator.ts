@@ -1,9 +1,46 @@
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { writeFile, mkdir } from "fs/promises";
-import { join, isAbsolute } from "path";
+import { join, isAbsolute, relative, resolve } from "path";
+import { fileURLToPath, pathToFileURL } from "url";
 import { getErrorPagesDir } from "@uni-proxy-manager/shared/config";
 
 let browser: Browser | null = null;
+
+function isPathWithinRoot(rootDir: string, targetPath: string): boolean {
+  const relPath = relative(resolve(rootDir), resolve(targetPath));
+  return relPath === "" || (!relPath.startsWith("..") && relPath !== "..");
+}
+
+function getValidatedPreviewPaths(errorPageId: string, htmlPath: string): {
+  absoluteHtmlPath: string;
+  allowedRootDir: string;
+} {
+  const errorPagesDir = resolve(getErrorPagesDir());
+  const allowedRootDir = resolve(errorPagesDir, errorPageId);
+  const absoluteHtmlPath = isAbsolute(htmlPath)
+    ? resolve(htmlPath)
+    : resolve(errorPagesDir, htmlPath);
+
+  if (!isPathWithinRoot(allowedRootDir, absoluteHtmlPath)) {
+    throw new Error("Preview entry file must stay within the error page directory");
+  }
+
+  return { absoluteHtmlPath, allowedRootDir };
+}
+
+function isAllowedPreviewRequest(requestUrl: string, allowedRootDir: string): boolean {
+  try {
+    const url = new URL(requestUrl);
+
+    if (url.protocol === "file:") {
+      return isPathWithinRoot(allowedRootDir, fileURLToPath(url));
+    }
+
+    return url.protocol === "data:" || url.protocol === "about:";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Get or create a shared browser instance
@@ -47,23 +84,33 @@ export async function generatePreview(
   errorPageId: string,
   htmlPath: string
 ): Promise<string> {
+  let context: BrowserContext | null = null;
+  let page: Page | null = null;
+
   try {
     const browser = await getBrowser();
-    const context = await browser.newContext({
-      viewport: { width: 1280, height: 720 },
-    });
-    const page = await context.newPage();
+    const { absoluteHtmlPath, allowedRootDir } = getValidatedPreviewPaths(errorPageId, htmlPath);
 
-    // Ensure htmlPath is absolute
-    const absoluteHtmlPath = isAbsolute(htmlPath)
-      ? htmlPath
-      : join(getErrorPagesDir(), htmlPath);
+    context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
+      serviceWorkers: "block",
+    });
+    await context.route("**/*", async (route) => {
+      if (isAllowedPreviewRequest(route.request().url(), allowedRootDir)) {
+        await route.continue();
+        return;
+      }
+
+      console.warn(`[PreviewGenerator] Blocked preview request: ${route.request().url()}`);
+      await route.abort("blockedbyclient");
+    });
+    page = await context.newPage();
 
     console.log(`[PreviewGenerator] Generating preview for ${errorPageId} from ${absoluteHtmlPath}`);
 
     // Load the HTML file
-    await page.goto(`file://${absoluteHtmlPath}`, {
-      waitUntil: "networkidle",
+    await page.goto(pathToFileURL(absoluteHtmlPath).href, {
+      waitUntil: "load",
       timeout: 10000,
     });
 
@@ -75,10 +122,6 @@ export async function generatePreview(
       type: "png",
       fullPage: false,
     });
-
-    // Close the page and context
-    await page.close();
-    await context.close();
 
     // Save preview image
     const errorPagesDir = getErrorPagesDir();
@@ -99,6 +142,13 @@ export async function generatePreview(
       `Failed to generate preview: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error }
     );
+  } finally {
+    if (page) {
+      await page.close().catch(() => undefined);
+    }
+    if (context) {
+      await context.close().catch(() => undefined);
+    }
   }
 }
 

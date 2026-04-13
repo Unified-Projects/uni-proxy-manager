@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-13
+
+### Security
+- Make API auth fail closed when `UNI_PROXY_MANAGER_AUTH_ENABLED=true` is set without a valid API key, while preserving the `/health` and `/api/analytics-public/*` bypasses
+- Apply rate limits correctly for repeated bad API key attempts and return `Retry-After` metadata
+- Require a bearer-protected invalidate secret for `sites-lookup` cache invalidation
+- Prevent cluster node forwarding from sending stored credentials to public destinations
+- Strip unsafe imported certificate file paths during settings import before persisting records
+- Block outbound network access during error-page preview generation
+
+### Changed
+- Normalize cluster node API origins and stop returning stored node API keys from cluster APIs
+- Treat the configured Pomerium authenticate hostname as routed instead of reporting it as `no-backends`
+- Aggregate traffic metrics into hourly buckets with zero-filled gaps for day and last-24-hour views
+- Aggregate site analytics records into shared time buckets and combine ranked page, referrer, and geography totals before applying limits
+- Keep analytics live polling enabled by default while allowing it to be disabled explicitly when another realtime transport is active
+- Refresh web certificate, cluster, Pomerium identity-provider, site settings, and typed API client flows to match the updated backend behavior
+- Queue HAProxy site-config update jobs during deployment promotion and carry render-mode/runtime metadata needed for custom and SSR runtimes
+- Preserve binary request and response bodies in the Rust `sites-lookup` proxy through binary-safe multipart and spooled response handling
+
+### Fixed
+- Update certificate SANs in place, normalize alternate names, and queue forced reissue work on the existing certificate record
+- Link auto-created DNS certificates back to their originating domain immediately after domain creation
+- Restrict certificate and domain cleanup to managed certificate directories inside the cert volume, leaving unmanaged absolute paths untouched
+- Stop plain static ZIP uploads and redeploys from injecting implicit Node install/build commands when no build step is required
+- Stop site API responses from exposing raw environment variables while keeping the dedicated env endpoint masked and available
+- Restrict preview file access to the error page's own directory during preview generation
+- Expand integration and unit coverage for certificates, domains, metrics, analytics, settings import, ZIP uploads, and site build/deploy jobs
+
 ## [0.1.1] - 2026-03-27
 
 ### Fixed

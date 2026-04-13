@@ -20,8 +20,16 @@ const STARTUP_TIMEOUT_SECONDS = Number.parseInt(
 export async function processSiteDeploy(
   job: Job<SiteDeployJobData>
 ): Promise<SiteDeployResult> {
-  // entryPoint and runtimePath are passed but not used - we use framework-specific start commands
-  const { siteId, deploymentId, targetSlot, artifactPath, runtimeConfig } = job.data;
+  const {
+    siteId,
+    deploymentId,
+    targetSlot,
+    artifactPath,
+    runtimeConfig,
+    renderMode,
+    entryPoint,
+    runtimePath,
+  } = job.data;
   const redis = getRedisClient();
   const logChannel = `deployment-logs:${deploymentId}`;
   const statusChannel = `deployment-status:${deploymentId}`;
@@ -122,8 +130,28 @@ export async function processSiteDeploy(
 
     await log(`Source path for OpenRuntimes: ${sourcePath}`);
 
-    const renderMode = site.renderMode || "ssg";
-    const isStatic = renderMode === "ssg";
+    const effectiveRenderMode = renderMode || site.renderMode || "ssg";
+    const isStatic = effectiveRenderMode === "ssg";
+    const effectiveEntryPoint = entryPoint || site.entryPoint || undefined;
+    const effectiveRuntimePath = runtimePath || site.runtimePath || undefined;
+
+    const buildCustomStartCommand = (): string => {
+      if (!effectiveEntryPoint) {
+        throw new Error("Custom runtime deployments require an entryPoint.");
+      }
+
+      const runtimeSegments = [effectiveRuntimePath, effectiveEntryPoint]
+        .filter(Boolean)
+        .map((segment) => segment!.replace(/^\.?\//, "").replace(/\\/g, "/"));
+      const relativeRuntimeTarget = runtimeSegments.join("/");
+
+      if (!relativeRuntimeTarget) {
+        throw new Error("Custom runtime deployments require a valid runtime target.");
+      }
+
+      const escapedTarget = relativeRuntimeTarget.replace(/"/g, '\\"');
+      return `node "${escapedTarget}"`;
+    };
 
     // Use framework-specific start commands (Appwrite-style)
     // These helper scripts handle finding server.js correctly after bundling
@@ -137,6 +165,9 @@ export async function processSiteDeploy(
         break;
       case "static":
         startCommand = "bash helpers/server.sh";
+        break;
+      case "custom":
+        startCommand = buildCustomStartCommand();
         break;
       default:
         startCommand = "bash helpers/server.sh";
@@ -154,6 +185,7 @@ export async function processSiteDeploy(
     };
 
     await log(`Starting runtime with ${runtimeConfig.memoryMb}MB memory and ${runtimeConfig.cpus} CPUs`);
+    await log(`Render mode: ${effectiveRenderMode}`);
     await log(`Start command: ${startCommand}`);
     await log(`Runtime entrypoint: ${runtimeEntrypoint}`);
 

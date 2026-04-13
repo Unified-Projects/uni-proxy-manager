@@ -159,6 +159,54 @@ describe("Metrics API", () => {
       expect(response.body.metrics.length).toBeGreaterThan(0);
     });
 
+    it("should zero-fill missing hourly buckets for the day interval", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({ hostname: "day-window.com" })
+      );
+      const domainId = domainRes.body.domain.id;
+
+      const currentHour = new Date();
+      currentHour.setMinutes(0, 0, 0);
+      const twelveHoursAgo = new Date(currentHour);
+      twelveHoursAgo.setHours(twelveHoursAgo.getHours() - 12);
+
+      await testDb.insert(schema.trafficMetrics).values({
+        id: nanoid(),
+        domainId,
+        timestamp: twelveHoursAgo,
+        totalRequests: 200,
+        uniqueVisitors: 40,
+        httpRequests: 180,
+        httpsRequests: 20,
+        status2xx: 190,
+        status3xx: 5,
+        status4xx: 3,
+        status5xx: 2,
+        bytesIn: 100000,
+        bytesOut: 300000,
+        currentConnections: 10,
+        maxConnections: 20,
+      });
+
+      const response = await testClient.get<{ metrics: any[] }>(
+        `/api/metrics/domain/${domainId}?interval=day`
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.metrics).toHaveLength(24);
+      expect(
+        response.body.metrics.some(
+          (metric) => metric.timestamp === twelveHoursAgo.toISOString()
+        )
+      ).toBe(true);
+      expect(
+        response.body.metrics.some(
+          (metric) => metric.totalRequests === 0 && metric.uniqueVisitors === 0
+        )
+      ).toBe(true);
+    });
+
     it("should support week interval", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
@@ -349,7 +397,134 @@ describe("Metrics API", () => {
       expect(response.status).toBe(200);
       expect(response.body.recentTraffic).toBeDefined();
       expect(Array.isArray(response.body.recentTraffic)).toBe(true);
-      expect(response.body.recentTraffic.length).toBeGreaterThan(0);
+      expect(response.body.recentTraffic).toHaveLength(24);
+      expect(
+        response.body.recentTraffic.filter((bucket) => bucket.totalRequests > 0)
+      ).toHaveLength(5);
+    });
+
+    it("should aggregate recent traffic into hourly buckets", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({ hostname: "bucketed.com" })
+      );
+
+      const baseTime = new Date();
+      baseTime.setMinutes(5, 0, 0);
+
+      await testDb.insert(schema.trafficMetrics).values([
+        {
+          id: nanoid(),
+          domainId: domainRes.body.domain.id,
+          timestamp: new Date(baseTime),
+          totalRequests: 120,
+          uniqueVisitors: 50,
+          httpRequests: 100,
+          httpsRequests: 20,
+          status2xx: 110,
+          status3xx: 5,
+          status4xx: 3,
+          status5xx: 2,
+          bytesIn: 1000,
+          bytesOut: 4000,
+          currentConnections: 10,
+          maxConnections: 25,
+        },
+        {
+          id: nanoid(),
+          domainId: domainRes.body.domain.id,
+          timestamp: new Date(baseTime.getTime() + 30 * 60 * 1000),
+          totalRequests: 80,
+          uniqueVisitors: 30,
+          httpRequests: 60,
+          httpsRequests: 20,
+          status2xx: 70,
+          status3xx: 5,
+          status4xx: 3,
+          status5xx: 2,
+          bytesIn: 2000,
+          bytesOut: 3000,
+          currentConnections: 15,
+          maxConnections: 30,
+        },
+      ]);
+
+      const response = await testClient.get<{
+        recentTraffic: Array<{
+          totalRequests: number;
+          uniqueVisitors: number;
+          httpRequests: number;
+          httpsRequests: number;
+          currentConnections: number;
+          maxConnections: number;
+        }>;
+      }>("/api/metrics/dashboard");
+
+      expect(response.status).toBe(200);
+      expect(response.body.recentTraffic).toHaveLength(24);
+
+      const populatedBucket = response.body.recentTraffic.find(
+        (bucket) => bucket.totalRequests === 200
+      );
+
+      expect(populatedBucket).toMatchObject({
+        totalRequests: 200,
+        uniqueVisitors: 80,
+        httpRequests: 160,
+        httpsRequests: 40,
+        currentConnections: 15,
+        maxConnections: 30,
+      });
+
+      expect(
+        response.body.recentTraffic.filter((bucket) => bucket.totalRequests === 0)
+      ).toHaveLength(23);
+    });
+
+    it("should zero-fill missing hourly buckets for the last 24 hours", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({ hostname: "gapped-traffic.com" })
+      );
+
+      const currentHour = new Date();
+      currentHour.setMinutes(10, 0, 0);
+      const threeHoursAgo = new Date(currentHour.getTime() - 3 * 60 * 60 * 1000);
+
+      await testDb.insert(schema.trafficMetrics).values({
+        id: nanoid(),
+        domainId: domainRes.body.domain.id,
+        timestamp: threeHoursAgo,
+        totalRequests: 75,
+        uniqueVisitors: 12,
+        httpRequests: 75,
+        httpsRequests: 0,
+        status2xx: 70,
+        status3xx: 2,
+        status4xx: 2,
+        status5xx: 1,
+        bytesIn: 1000,
+        bytesOut: 2000,
+        currentConnections: 4,
+        maxConnections: 10,
+      });
+
+      const response = await testClient.get<{
+        recentTraffic: Array<{
+          totalRequests: number;
+          uniqueVisitors: number;
+          timestamp: string;
+        }>;
+      }>("/api/metrics/dashboard");
+
+      expect(response.status).toBe(200);
+      expect(response.body.recentTraffic).toHaveLength(24);
+      expect(response.body.recentTraffic.some((bucket) => bucket.totalRequests === 75)).toBe(true);
+      expect(
+        response.body.recentTraffic.some(
+          (bucket) => bucket.totalRequests === 0 && bucket.uniqueVisitors === 0
+        )
+      ).toBe(true);
     });
   });
 
