@@ -315,13 +315,15 @@ app.get("/domain/:domainId", async (c) => {
       .orderBy(desc(trafficBucket))
       .limit(24);
 
-    if (rows.length === 0) {
+    const newestRow = rows[0];
+
+    if (!newestRow) {
       metrics = [];
     } else {
       const newestBucketTimestamp =
-        rows[0]?.timestamp instanceof Date
-          ? rows[0].timestamp
-          : new Date(rows[0].timestamp);
+        newestRow.timestamp instanceof Date
+          ? newestRow.timestamp
+          : new Date(newestRow.timestamp);
       const newestBucketHour = truncateToHour(newestBucketTimestamp);
       const previousHour = new Date(currentHour);
       previousHour.setHours(previousHour.getHours() - 1);
