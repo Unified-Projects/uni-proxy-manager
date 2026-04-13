@@ -863,6 +863,49 @@ const handlers: MockHandler[] = [
       return jsonResponse({ site }, 201);
     }
 
+    const siteEnvMatch = url.pathname.match(/^\/api\/sites\/(?<id>[^/]+)\/env$/);
+    if (siteEnvMatch && method === "GET") {
+      const site = mockState.sites.find((s) => s.id === siteEnvMatch.groups!.id);
+      if (!site) {
+        return jsonResponse({ error: "Site not found" }, 404);
+      }
+
+      const maskedEnv: Record<string, string> = {};
+      for (const [key, value] of Object.entries(site.envVariables || {})) {
+        if (
+          key.toLowerCase().includes("secret") ||
+          key.toLowerCase().includes("password") ||
+          key.toLowerCase().includes("key") ||
+          key.toLowerCase().includes("token")
+        ) {
+          maskedEnv[key] = "********";
+        } else {
+          maskedEnv[key] = value;
+        }
+      }
+
+      return jsonResponse({
+        envVariables: maskedEnv,
+        count: Object.keys(site.envVariables || {}).length,
+      });
+    }
+
+    if (siteEnvMatch && method === "PUT" && bodyText) {
+      const site = mockState.sites.find((s) => s.id === siteEnvMatch.groups!.id);
+      if (!site) {
+        return jsonResponse({ error: "Site not found" }, 404);
+      }
+
+      const body = JSON.parse(bodyText) as { envVariables?: Record<string, string> };
+      site.envVariables = body.envVariables || {};
+      site.updatedAt = now.toISOString();
+
+      return jsonResponse({
+        success: true,
+        count: Object.keys(site.envVariables).length,
+      });
+    }
+
     // GET /api/sites/:id - Get site details
     const siteDetail = url.pathname.match(/^\/api\/sites\/(?<id>[^/]+)$/);
     if (siteDetail && method === "GET") {

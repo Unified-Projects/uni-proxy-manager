@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Eye, EyeOff } from "lucide-react";
 import { Button, Input } from "@uni-proxy-manager/ui";
 
@@ -19,6 +19,11 @@ export function EnvVariablesEditor({
     Object.entries(variables).map(([key, value]) => ({ key, value }))
   );
   const [showValues, setShowValues] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    setEntries(Object.entries(variables).map(([key, value]) => ({ key, value })));
+    setShowValues({});
+  }, [variables]);
 
   const handleAddEntry = () => {
     setEntries([...entries, { key: "", value: "" }]);
