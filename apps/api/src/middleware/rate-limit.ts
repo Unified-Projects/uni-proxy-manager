@@ -47,6 +47,10 @@ let _redisCheckTime = 0;
 const REDIS_RECHECK_INTERVAL_MS = 30000; // Re-check Redis availability every 30s after failure
 
 function getRedis(): Redis | null {
+  if (_redis?.status === "end") {
+    _redis = null;
+  }
+
   if (!_redisAvailable) {
     // Periodically re-check so that if Redis comes back, we use it
     if (Date.now() - _redisCheckTime < REDIS_RECHECK_INTERVAL_MS) {
@@ -62,6 +66,7 @@ function getRedis(): Redis | null {
       _redis = getRedisClient() as Redis;
       _redisAvailable = true;
     } catch {
+      _redis = null;
       _redisAvailable = false;
       _redisCheckTime = Date.now();
       return null;
@@ -141,6 +146,7 @@ async function redisRateLimit(
     return { count, resetSeconds };
   } catch {
     // Redis became unavailable mid-operation; mark it and fall back
+    _redis = null;
     _redisAvailable = false;
     _redisCheckTime = Date.now();
     return null;

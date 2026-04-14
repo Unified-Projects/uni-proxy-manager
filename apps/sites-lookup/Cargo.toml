@@ -1,6 +1,6 @@
 [package]
 name = "sites-lookup"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "High-performance lookup service for HAProxy site routing"
 authors = ["Uni-Proxy-Manager"]

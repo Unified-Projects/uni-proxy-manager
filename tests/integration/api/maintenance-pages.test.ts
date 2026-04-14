@@ -7,6 +7,8 @@ import {
   createDomainFixture,
 } from "../setup/fixtures";
 import { checkPlaywrightAvailable } from "../setup/playwright-check";
+import { readFile } from "fs/promises";
+import { join } from "path";
 
 let playwrightAvailable = false;
 
@@ -29,7 +31,7 @@ describe("Maintenance Pages API", () => {
       const pageData = createMaintenancePageFixture();
       const response = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        pageData
+        pageData,
       );
 
       expect(response.status).toBe(201);
@@ -45,7 +47,7 @@ describe("Maintenance Pages API", () => {
       };
       const response = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        pageData
+        pageData,
       );
 
       expect(response.status).toBe(201);
@@ -70,7 +72,7 @@ describe("Maintenance Pages API", () => {
       });
 
       const response = await testClient.get<{ errorPages: any[] }>(
-        "/api/error-pages"
+        "/api/error-pages",
       );
 
       expect(response.status).toBe(200);
@@ -82,22 +84,30 @@ describe("Maintenance Pages API", () => {
     it("should upload ZIP file for maintenance page", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = createRes.body.errorPage.id;
 
       const zipFile = await createTestZipFile(
-        "<html><body><h1>Under Maintenance</h1></body></html>"
+        '<html><head><link rel="stylesheet" href="style.css"></head><body><h1>Under Maintenance</h1></body></html>',
       );
-      const response = await testClient.uploadFile<{ success: boolean; errorPage: any }>(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+      const response = await testClient.uploadFile<{
+        success: boolean;
+        errorPage: any;
+      }>(`/api/error-pages/${pageId}/upload`, zipFile);
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.errorPage.uploadedAt).toBeDefined();
       expect(response.body.errorPage.fileSize).toBeGreaterThan(0);
+
+      const compiledResponse = await readFile(
+        join(createRes.body.errorPage.directoryPath, "maintenance.http"),
+        "utf-8",
+      );
+      expect(compiledResponse).toContain("HTTP/1.0 503 Service Unavailable");
+      expect(compiledResponse).toContain("body { color: red; }");
+      expect(compiledResponse).not.toContain('href="style.css"');
     });
 
     it.skipIf(!playwrightAvailable)(
@@ -105,23 +115,25 @@ describe("Maintenance Pages API", () => {
       async () => {
         const createRes = await testClient.post<{ errorPage: any }>(
           "/api/error-pages",
-          createMaintenancePageFixture()
+          createMaintenancePageFixture(),
         );
         const pageId = createRes.body.errorPage.id;
 
         const zipFile = await createTestZipFile(
-          "<html><body><h1>Under Maintenance</h1></body></html>"
+          "<html><body><h1>Under Maintenance</h1></body></html>",
         );
-        const response = await testClient.uploadFile<{ success: boolean; errorPage: any }>(
-          `/api/error-pages/${pageId}/upload`,
-          zipFile
-        );
+        const response = await testClient.uploadFile<{
+          success: boolean;
+          errorPage: any;
+        }>(`/api/error-pages/${pageId}/upload`, zipFile);
 
         expect(response.status).toBe(200);
         expect(response.body.success).toBe(true);
         expect(response.body.errorPage.previewImagePath).toBeDefined();
-        expect(response.body.errorPage.previewImagePath).toContain("preview.png");
-      }
+        expect(response.body.errorPage.previewImagePath).toContain(
+          "preview.png",
+        );
+      },
     );
   });
 
@@ -129,18 +141,18 @@ describe("Maintenance Pages API", () => {
     it("should assign maintenance page to domain", async () => {
       const pageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = pageRes.body.errorPage.id;
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
       const response = await testClient.post<{ success: boolean }>(
-        `/api/error-pages/${pageId}/assign/${domainId}?type=maintenance`
+        `/api/error-pages/${pageId}/assign/${domainId}?type=maintenance`,
       );
 
       expect(response.status).toBe(200);
@@ -148,7 +160,7 @@ describe("Maintenance Pages API", () => {
 
       // Verify domain was updated
       const domainCheck = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
       expect(domainCheck.body.domain.maintenancePageId).toBe(pageId);
     });
@@ -156,25 +168,27 @@ describe("Maintenance Pages API", () => {
     it("should update config version when assigning maintenance page", async () => {
       const pageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = pageRes.body.errorPage.id;
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
       const initialVersion = domainRes.body.domain.configVersion;
 
       await testClient.post(
-        `/api/error-pages/${pageId}/assign/${domainId}?type=maintenance`
+        `/api/error-pages/${pageId}/assign/${domainId}?type=maintenance`,
       );
 
       const domainCheck = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
-      expect(domainCheck.body.domain.configVersion).toBeGreaterThan(initialVersion);
+      expect(domainCheck.body.domain.configVersion).toBeGreaterThan(
+        initialVersion,
+      );
     });
   });
 
@@ -182,7 +196,7 @@ describe("Maintenance Pages API", () => {
     it("should update maintenance page metadata", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = createRes.body.errorPage.id;
 
@@ -191,12 +205,14 @@ describe("Maintenance Pages API", () => {
         {
           name: "Updated Maintenance Page",
           description: "Now with better messaging",
-        }
+        },
       );
 
       expect(response.status).toBe(200);
       expect(response.body.errorPage.name).toBe("Updated Maintenance Page");
-      expect(response.body.errorPage.description).toBe("Now with better messaging");
+      expect(response.body.errorPage.description).toBe(
+        "Now with better messaging",
+      );
     });
   });
 
@@ -204,12 +220,12 @@ describe("Maintenance Pages API", () => {
     it("should delete maintenance page", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = createRes.body.errorPage.id;
 
       const response = await testClient.delete<{ success: boolean }>(
-        `/api/error-pages/${pageId}`
+        `/api/error-pages/${pageId}`,
       );
 
       expect(response.status).toBe(200);
@@ -222,22 +238,19 @@ describe("Maintenance Pages API", () => {
     it("should clean up files when deleting maintenance page", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = createRes.body.errorPage.id;
 
       // Upload files
       const zipFile = await createTestZipFile(
-        "<html><body>Maintenance</body></html>"
+        "<html><body>Maintenance</body></html>",
       );
-      await testClient.uploadFile(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+      await testClient.uploadFile(`/api/error-pages/${pageId}/upload`, zipFile);
 
       // Delete
       const response = await testClient.delete<{ success: boolean }>(
-        `/api/error-pages/${pageId}`
+        `/api/error-pages/${pageId}`,
       );
 
       expect(response.status).toBe(200);
@@ -251,38 +264,41 @@ describe("Maintenance Pages API", () => {
       async () => {
         const createRes = await testClient.post<{ errorPage: any }>(
           "/api/error-pages",
-          createMaintenancePageFixture()
+          createMaintenancePageFixture(),
         );
         const pageId = createRes.body.errorPage.id;
 
         const zipFile = await createTestZipFile(
-          "<html><body><h1>Under Maintenance</h1></body></html>"
+          "<html><body><h1>Under Maintenance</h1></body></html>",
         );
         await testClient.uploadFile(
           `/api/error-pages/${pageId}/upload`,
-          zipFile
+          zipFile,
         );
 
-        const response = await testClient.post<{ success: boolean; errorPage: any }>(
-          `/api/error-pages/${pageId}/regenerate-preview`
-        );
+        const response = await testClient.post<{
+          success: boolean;
+          errorPage: any;
+        }>(`/api/error-pages/${pageId}/regenerate-preview`);
 
         expect(response.status).toBe(200);
         expect(response.body.success).toBe(true);
         expect(response.body.errorPage.previewImagePath).toBeDefined();
-        expect(response.body.errorPage.previewImagePath).toContain("preview.png");
-      }
+        expect(response.body.errorPage.previewImagePath).toContain(
+          "preview.png",
+        );
+      },
     );
 
     it("should fail without uploaded files", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = createRes.body.errorPage.id;
 
       const response = await testClient.post(
-        `/api/error-pages/${pageId}/regenerate-preview`
+        `/api/error-pages/${pageId}/regenerate-preview`,
       );
 
       expect(response.status).toBe(400);
@@ -293,20 +309,17 @@ describe("Maintenance Pages API", () => {
     it("should download maintenance page files as ZIP", async () => {
       const createRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createMaintenancePageFixture()
+        createMaintenancePageFixture(),
       );
       const pageId = createRes.body.errorPage.id;
 
       const zipFile = await createTestZipFile(
-        "<html><body>Maintenance</body></html>"
+        "<html><body>Maintenance</body></html>",
       );
-      await testClient.uploadFile(
-        `/api/error-pages/${pageId}/upload`,
-        zipFile
-      );
+      await testClient.uploadFile(`/api/error-pages/${pageId}/upload`, zipFile);
 
       const response = await testClient.get(
-        `/api/error-pages/${pageId}/download`
+        `/api/error-pages/${pageId}/download`,
       );
 
       expect(response.status).toBe(200);

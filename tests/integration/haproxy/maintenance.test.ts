@@ -1,9 +1,25 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from "vitest";
 import { testClient } from "../setup/test-client";
 import { testDb, clearDatabase, closeTestDb } from "../setup/test-db";
 import { clearRedisQueues } from "../setup/test-redis";
-import { createDomainFixture, createBackendFixture, createErrorPageFixture, createTestZipFile } from "../setup/fixtures";
-import { createMockBackend, type MockBackendServer } from "../setup/mock-backend";
+import {
+  createDomainFixture,
+  createBackendFixture,
+  createErrorPageFixture,
+  createTestZipFile,
+} from "../setup/fixtures";
+import {
+  createMockBackend,
+  type MockBackendServer,
+} from "../setup/mock-backend";
 import { haproxyClient } from "../setup/haproxy-client";
 import * as schema from "../../../packages/database/src/schema";
 import { eq } from "drizzle-orm";
@@ -41,13 +57,13 @@ describe("HAProxy Maintenance Mode", () => {
       // Create maintenance page
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
       const maintPageId = maintPageRes.body.errorPage.id;
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "maint-acl.example.com" })
+        createDomainFixture({ hostname: "maint-acl.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -62,7 +78,9 @@ describe("HAProxy Maintenance Mode", () => {
 
       await testClient.post("/api/backends", createBackendFixture(domainId));
 
-      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+      const previewRes = await testClient.get<string>(
+        "/api/haproxy/config/preview",
+      );
 
       expect(previewRes.body).toContain("maintenance");
       expect(previewRes.body).toContain("maint-acl.example.com");
@@ -71,7 +89,7 @@ describe("HAProxy Maintenance Mode", () => {
     it("should not include maintenance ACLs when disabled", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "no-maint.example.com" })
+        createDomainFixture({ hostname: "no-maint.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -85,7 +103,9 @@ describe("HAProxy Maintenance Mode", () => {
 
       await testClient.post("/api/backends", createBackendFixture(domainId));
 
-      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+      const previewRes = await testClient.get<string>(
+        "/api/haproxy/config/preview",
+      );
 
       // Should not have maintenance backend for this domain
       expect(previewRes.body).not.toContain("maintenance_no-maint_example_com");
@@ -96,13 +116,13 @@ describe("HAProxy Maintenance Mode", () => {
     it("should include bypass IPs in ACLs", async () => {
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
       const maintPageId = maintPageRes.body.errorPage.id;
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "bypass.example.com" })
+        createDomainFixture({ hostname: "bypass.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -118,7 +138,9 @@ describe("HAProxy Maintenance Mode", () => {
 
       await testClient.post("/api/backends", createBackendFixture(domainId));
 
-      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+      const previewRes = await testClient.get<string>(
+        "/api/haproxy/config/preview",
+      );
 
       expect(previewRes.body).toContain("192.168.1.100");
       expect(previewRes.body).toContain("10.0.0.50");
@@ -128,12 +150,12 @@ describe("HAProxy Maintenance Mode", () => {
     it("should handle CIDR notation in bypass IPs", async () => {
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "cidr.example.com" })
+        createDomainFixture({ hostname: "cidr.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -149,7 +171,9 @@ describe("HAProxy Maintenance Mode", () => {
 
       await testClient.post("/api/backends", createBackendFixture(domainId));
 
-      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+      const previewRes = await testClient.get<string>(
+        "/api/haproxy/config/preview",
+      );
 
       expect(previewRes.body).toContain("10.0.0.0/8");
       expect(previewRes.body).toContain("192.168.0.0/16");
@@ -160,7 +184,7 @@ describe("HAProxy Maintenance Mode", () => {
     it("should enable maintenance mode via API", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -186,16 +210,18 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Verify domain state
       const domainCheck = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
       expect(domainCheck.body.domain.maintenanceEnabled).toBe(true);
-      expect(domainCheck.body.domain.maintenanceBypassIps).toContain("10.0.0.1");
+      expect(domainCheck.body.domain.maintenanceBypassIps).toContain(
+        "10.0.0.1",
+      );
     });
 
     it("should disable maintenance mode via API", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -211,7 +237,7 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Disable maintenance
       const disableRes = await testClient.post<{ success: boolean }>(
-        `/api/maintenance/domains/${domainId}/disable`
+        `/api/maintenance/domains/${domainId}/disable`,
       );
 
       expect(disableRes.status).toBe(200);
@@ -219,7 +245,7 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Verify domain state
       const domainCheck = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
       expect(domainCheck.body.domain.maintenanceEnabled).toBe(false);
     });
@@ -227,7 +253,7 @@ describe("HAProxy Maintenance Mode", () => {
     it("should toggle maintenance mode on and off", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -243,7 +269,9 @@ describe("HAProxy Maintenance Mode", () => {
         reason: "Test",
       });
 
-      let check = await testClient.get<{ domain: any }>(`/api/domains/${domainId}`);
+      let check = await testClient.get<{ domain: any }>(
+        `/api/domains/${domainId}`,
+      );
       expect(check.body.domain.maintenanceEnabled).toBe(true);
 
       // Toggle off
@@ -266,7 +294,7 @@ describe("HAProxy Maintenance Mode", () => {
     it("should create maintenance window record when enabled", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -288,14 +316,14 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Get maintenance windows for domain
       const windowsRes = await testClient.get<{ windows: any[] }>(
-        `/api/maintenance/domains/${domainId}/windows`
+        `/api/maintenance/domains/${domainId}/windows`,
       );
 
       expect(windowsRes.status).toBe(200);
       expect(windowsRes.body.windows.length).toBeGreaterThanOrEqual(1);
 
       const window = windowsRes.body.windows.find(
-        (w: any) => w.id === enableRes.body.maintenanceWindowId
+        (w: any) => w.id === enableRes.body.maintenanceWindowId,
       );
       expect(window).toBeDefined();
       expect(window.reason).toBe("Database migration");
@@ -305,7 +333,7 @@ describe("HAProxy Maintenance Mode", () => {
     it("should close maintenance window when disabled", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -319,7 +347,7 @@ describe("HAProxy Maintenance Mode", () => {
       // Enable
       const enableRes = await testClient.post<{ maintenanceWindowId: string }>(
         `/api/maintenance/domains/${domainId}/enable`,
-        { reason: "Test" }
+        { reason: "Test" },
       );
       const windowId = enableRes.body.maintenanceWindowId;
 
@@ -328,11 +356,11 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Check window is closed
       const windowsRes = await testClient.get<{ windows: any[] }>(
-        `/api/maintenance/domains/${domainId}/windows`
+        `/api/maintenance/domains/${domainId}/windows`,
       );
 
       const window = windowsRes.body.windows.find(
-        (w: any) => w.id === windowId
+        (w: any) => w.id === windowId,
       );
       expect(window?.endedAt).toBeDefined();
     });
@@ -342,7 +370,7 @@ describe("HAProxy Maintenance Mode", () => {
     it("should trigger config reload when maintenance is enabled", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -355,7 +383,7 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Get initial config version
       const initialDomain = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
       const initialVersion = initialDomain.body.domain.configVersion;
 
@@ -366,15 +394,17 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Check config version incremented
       const updatedDomain = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
-      expect(updatedDomain.body.domain.configVersion).toBeGreaterThan(initialVersion);
+      expect(updatedDomain.body.domain.configVersion).toBeGreaterThan(
+        initialVersion,
+      );
     });
 
     it("should trigger config reload when maintenance is disabled", async () => {
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture()
+        createDomainFixture(),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -389,7 +419,7 @@ describe("HAProxy Maintenance Mode", () => {
       await testClient.post("/api/backends", createBackendFixture(domainId));
 
       const initialDomain = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
       const initialVersion = initialDomain.body.domain.configVersion;
 
@@ -397,9 +427,11 @@ describe("HAProxy Maintenance Mode", () => {
       await testClient.post(`/api/maintenance/domains/${domainId}/disable`);
 
       const updatedDomain = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
-      expect(updatedDomain.body.domain.configVersion).toBeGreaterThan(initialVersion);
+      expect(updatedDomain.body.domain.configVersion).toBeGreaterThan(
+        initialVersion,
+      );
     });
   });
 
@@ -413,7 +445,7 @@ describe("HAProxy Maintenance Mode", () => {
           type: "maintenance",
           description: "Maintenance page",
           entryFile: "index.html",
-        }
+        },
       );
       const maintPageId = maintPageRes.body.errorPage.id;
 
@@ -425,17 +457,17 @@ describe("HAProxy Maintenance Mode", () => {
 <h1>We're Under Maintenance</h1>
 <p>Please check back soon.</p>
 </body>
-</html>`
+</html>`,
       );
       await testClient.uploadFile(
         `/api/error-pages/${maintPageId}/upload`,
-        zipFile
+        zipFile,
       );
 
       // Create domain
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "maint-page.example.com" })
+        createDomainFixture({ hostname: "maint-page.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -448,13 +480,13 @@ describe("HAProxy Maintenance Mode", () => {
 
       // Assign maintenance page
       const assignRes = await testClient.post<{ success: boolean }>(
-        `/api/error-pages/${maintPageId}/assign/${domainId}?type=maintenance`
+        `/api/error-pages/${maintPageId}/assign/${domainId}?type=maintenance`,
       );
       expect(assignRes.status).toBe(200);
 
       // Verify assignment
       const domainCheck = await testClient.get<{ domain: any }>(
-        `/api/domains/${domainId}`
+        `/api/domains/${domainId}`,
       );
       expect(domainCheck.body.domain.maintenancePageId).toBe(maintPageId);
     });
@@ -462,13 +494,13 @@ describe("HAProxy Maintenance Mode", () => {
     it("should include maintenance page path in config when enabled", async () => {
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
       const maintPageId = maintPageRes.body.errorPage.id;
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "maint-path.example.com" })
+        createDomainFixture({ hostname: "maint-path.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -483,10 +515,15 @@ describe("HAProxy Maintenance Mode", () => {
 
       await testClient.post("/api/backends", createBackendFixture(domainId));
 
-      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+      const previewRes = await testClient.get<string>(
+        "/api/haproxy/config/preview",
+      );
 
       // Should have maintenance backend
       expect(previewRes.body).toContain("maintenance");
+      expect(previewRes.body).toContain(
+        `errorfile 503 ${maintPageRes.body.errorPage.directoryPath}/maintenance.http`,
+      );
     });
   });
 
@@ -494,12 +531,12 @@ describe("HAProxy Maintenance Mode", () => {
     it("should block regular traffic when maintenance is enabled", async () => {
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "block-traffic.example.com" })
+        createDomainFixture({ hostname: "block-traffic.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -517,7 +554,7 @@ describe("HAProxy Maintenance Mode", () => {
         createBackendFixture(domainId, {
           address: "127.0.0.1",
           port: mockBackendPort,
-        })
+        }),
       );
 
       await testClient.post("/api/haproxy/apply");
@@ -531,19 +568,21 @@ describe("HAProxy Maintenance Mode", () => {
       }
 
       // Test maintenance mode
-      const isBlocked = await haproxyClient.testMaintenanceMode("block-traffic.example.com");
+      const isBlocked = await haproxyClient.testMaintenanceMode(
+        "block-traffic.example.com",
+      );
       expect(typeof isBlocked).toBe("boolean");
     });
 
     it("should allow bypass IP through maintenance mode", async () => {
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
 
       const domainRes = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "bypass-ip.example.com" })
+        createDomainFixture({ hostname: "bypass-ip.example.com" }),
       );
       const domainId = domainRes.body.domain.id;
 
@@ -562,7 +601,7 @@ describe("HAProxy Maintenance Mode", () => {
         createBackendFixture(domainId, {
           address: "127.0.0.1",
           port: mockBackendPort,
-        })
+        }),
       );
 
       await testClient.post("/api/haproxy/apply");
@@ -575,7 +614,7 @@ describe("HAProxy Maintenance Mode", () => {
       // Test bypass
       const bypassed = await haproxyClient.testMaintenanceBypass(
         "bypass-ip.example.com",
-        "192.168.1.100"
+        "192.168.1.100",
       );
       expect(typeof bypassed).toBe("boolean");
     });
@@ -585,17 +624,17 @@ describe("HAProxy Maintenance Mode", () => {
     it("should handle maintenance mode independently for each domain", async () => {
       const maintPageRes = await testClient.post<{ errorPage: any }>(
         "/api/error-pages",
-        createErrorPageFixture("maintenance")
+        createErrorPageFixture("maintenance"),
       );
 
       // Create two domains
       const domain1Res = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "domain1-maint.example.com" })
+        createDomainFixture({ hostname: "domain1-maint.example.com" }),
       );
       const domain2Res = await testClient.post<{ domain: any }>(
         "/api/domains",
-        createDomainFixture({ hostname: "domain2-maint.example.com" })
+        createDomainFixture({ hostname: "domain2-maint.example.com" }),
       );
 
       const domain1Id = domain1Res.body.domain.id;
@@ -623,15 +662,21 @@ describe("HAProxy Maintenance Mode", () => {
       await testClient.post("/api/backends", createBackendFixture(domain2Id));
 
       // Verify config
-      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+      const previewRes = await testClient.get<string>(
+        "/api/haproxy/config/preview",
+      );
 
       // domain1 should have maintenance backend
       expect(previewRes.body).toContain("domain1-maint.example.com");
-      expect(previewRes.body).toContain("maintenance_domain1-maint_example_com");
+      expect(previewRes.body).toContain(
+        "maintenance_domain1-maint_example_com",
+      );
 
       // domain2 should not have maintenance backend
       expect(previewRes.body).toContain("domain2-maint.example.com");
-      expect(previewRes.body).not.toContain("maintenance_domain2-maint_example_com");
+      expect(previewRes.body).not.toContain(
+        "maintenance_domain2-maint_example_com",
+      );
     });
   });
 });

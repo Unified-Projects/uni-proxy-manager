@@ -34,16 +34,15 @@ app.get("/health", async (c) => {
       pingRedis(),
       getClickHouseClient().ping().then(() => true).catch(() => false),
     ]);
-    const allOk = redisOk && clickhouseOk;
     return c.json({
-      status: allOk ? "ok" : "degraded",
+      status: redisOk && clickhouseOk ? "ok" : "degraded",
       service: "analytics",
       redis: redisOk ? "ok" : "down",
       clickhouse: clickhouseOk ? "ok" : "down",
       timestamp: new Date().toISOString(),
-    }, allOk ? 200 : 503);
+    }, 200);
   } catch {
-    return c.json({ status: "error", service: "analytics" }, 503);
+    return c.json({ status: "error", service: "analytics" }, 200);
   }
 });
 

@@ -105,7 +105,7 @@ backend acme_backend
 # Maintenance backend template
 # backend maintenance_example
 #     mode http
-#     errorfile 503 /data/error-pages/example-maintenance/index.html
+#     errorfile 503 /data/error-pages/example-maintenance/maintenance.http
 
 # Sites lookup backend - handles DB lookup and proxies to executor
 backend sites_lookup_backend

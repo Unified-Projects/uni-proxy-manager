@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-14
+
+### Added
+- Compile uploaded maintenance pages into HAProxy-ready `maintenance.http` responses with local CSS, JavaScript, and image assets inlined for direct serving
+- Add unit and integration coverage for maintenance page compilation plus analytics health and live snapshot degradation handling
+
+### Changed
+- Return HTTP 200 from analytics health checks while reporting degraded dependency status in the response body
+- Point HAProxy config generation and startup initialisation at compiled `maintenance.http` files for domain and site maintenance backends
+- Use argument-safe child process execution in integration test setup instead of shell-dependent command invocation
+
+### Fixed
+- Recompile maintenance pages on upload, page updates, and maintenance enablement so HAProxy always serves the latest page bundle
+- Fall back to empty analytics live snapshots when Redis is unavailable instead of failing the endpoint
+- Reset ended Redis clients in shared Redis utilities and API rate limiting so services can recover cleanly after disconnects
+
 ## [0.1.2] - 2026-04-13
 
 ### Security

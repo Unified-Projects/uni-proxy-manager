@@ -39,16 +39,20 @@ const mockClient = {
   ping: vi.fn().mockResolvedValue(true),
 } as unknown as ClickHouseClient;
 
+const mockRedisClient = {
+  zcard: vi.fn().mockResolvedValue(0),
+  zcount: vi.fn().mockResolvedValue(0),
+  zrange: vi.fn().mockResolvedValue([]),
+  zrangebyscore: vi.fn().mockResolvedValue([]),
+  lrange: vi.fn().mockResolvedValue([]),
+};
+
 vi.mock("../../clickhouse/client", () => ({
   getClickHouseClient: vi.fn(() => mockClient),
 }));
 
 vi.mock("@uni-proxy-manager/shared/redis", () => ({
-  getRedisClient: vi.fn(() => ({
-    zcard: vi.fn().mockResolvedValue(0),
-    zrange: vi.fn().mockResolvedValue([]),
-    zrangebyscore: vi.fn().mockResolvedValue([]),
-  })),
+  getRedisClient: vi.fn(() => mockRedisClient),
 }));
 
 // Import SUT after mocks are in place.
@@ -93,6 +97,11 @@ function req(
 beforeEach(() => {
   vi.clearAllMocks();
   mockConfigStore[CONFIG_ID] = { ...BASE_CONFIG };
+  mockRedisClient.zcard.mockResolvedValue(0);
+  mockRedisClient.zcount.mockResolvedValue(0);
+  mockRedisClient.zrange.mockResolvedValue([]);
+  mockRedisClient.zrangebyscore.mockResolvedValue([]);
+  mockRedisClient.lrange.mockResolvedValue([]);
 
   // Default: return empty row sets for all queries.
   (mockClient.query as ReturnType<typeof vi.fn>).mockResolvedValue(makeResult([]));
@@ -531,6 +540,53 @@ describe("GET /:configId/utm", () => {
     expect(body.sources).toEqual([]);
     expect(body.mediums).toEqual([]);
     expect(body.campaigns).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live endpoint
+// ---------------------------------------------------------------------------
+
+describe("GET /:configId/live", () => {
+  it("returns live snapshot data from Redis", async () => {
+    mockRedisClient.zcount.mockResolvedValue(3);
+    mockRedisClient.zrangebyscore.mockResolvedValue([
+      "visitor-1:/pricing",
+      "visitor-2:/pricing",
+      "visitor-3:/docs",
+    ]);
+    mockRedisClient.lrange.mockResolvedValue([
+      JSON.stringify({ type: "pageview", pathname: "/pricing" }),
+      JSON.stringify({ type: "event", name: "cta_click" }),
+    ]);
+
+    const res = await app.fetch(req(`/${CONFIG_ID}/live`));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.activeVisitors).toBe(3);
+    expect(body.activePages).toEqual([
+      { pathname: "/pricing", visitors: 2 },
+      { pathname: "/docs", visitors: 1 },
+    ]);
+    expect(body.recentEvents).toEqual([
+      { type: "pageview", pathname: "/pricing" },
+      { type: "event", name: "cta_click" },
+    ]);
+  });
+
+  it("returns an empty snapshot when Redis is unavailable", async () => {
+    mockRedisClient.zcount.mockRejectedValue(new Error("Connection is closed."));
+
+    const res = await app.fetch(req(`/${CONFIG_ID}/live`));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      activeVisitors: 0,
+      activePages: [],
+      recentEvents: [],
+    });
   });
 });
 

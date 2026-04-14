@@ -62,15 +62,17 @@ export function sanitizeIdentifier(str: string): string {
  * Required for backends using init-addr none (e.g. pomerium_backend)
  */
 function renderResolvers(): string {
-  return [
-    "resolvers docker",
-    "    nameserver dns1 127.0.0.11:53",
-    "    resolve_retries 3",
-    "    timeout resolve 1s",
-    "    timeout retry 1s",
-    "    hold nx 10s",
-    "    hold valid 10s",
-  ].join("\n") + "\n";
+  return (
+    [
+      "resolvers docker",
+      "    nameserver dns1 127.0.0.11:53",
+      "    resolve_retries 3",
+      "    timeout resolve 1s",
+      "    timeout retry 1s",
+      "    hold nx 10s",
+      "    hold valid 10s",
+    ].join("\n") + "\n"
+  );
 }
 
 /**
@@ -110,7 +112,9 @@ function renderStatsFrontend(): string {
     lines.push("    acl is_localhost src 127.0.0.1");
     lines.push("    stats admin if is_localhost");
     // Log warning about unprotected stats
-    console.warn("[HAProxy] Stats page has no authentication configured. Set UNI_PROXY_MANAGER_STATS_PASSWORD for production.");
+    console.warn(
+      "[HAProxy] Stats page has no authentication configured. Set UNI_PROXY_MANAGER_STATS_PASSWORD for production.",
+    );
   }
 
   return lines.join("\n") + "\n";
@@ -184,7 +188,9 @@ function renderFrontend(frontend: HAProxyFrontend): string {
   // Use backends
   for (const useBackend of frontend.useBackends) {
     if (useBackend.condition) {
-      lines.push(`    use_backend ${useBackend.backendName} if ${useBackend.condition}`);
+      lines.push(
+        `    use_backend ${useBackend.backendName} if ${useBackend.condition}`,
+      );
     } else {
       lines.push(`    use_backend ${useBackend.backendName}`);
     }
@@ -227,11 +233,17 @@ function renderBackend(backend: HAProxyBackend): string {
   if (backend.httpCheck) {
     lines.push(`    option httpchk`);
     if (backend.httpCheck.host) {
-      lines.push(`    http-check send meth GET uri ${backend.httpCheck.path} ver HTTP/1.1 hdr Host ${backend.httpCheck.host}`);
+      lines.push(
+        `    http-check send meth GET uri ${backend.httpCheck.path} ver HTTP/1.1 hdr Host ${backend.httpCheck.host}`,
+      );
     } else {
-      lines.push(`    http-check send meth GET uri ${backend.httpCheck.path} ver HTTP/1.0`);
+      lines.push(
+        `    http-check send meth GET uri ${backend.httpCheck.path} ver HTTP/1.0`,
+      );
     }
-    lines.push(`    http-check expect status ${backend.httpCheck.expectStatus}`);
+    lines.push(
+      `    http-check expect status ${backend.httpCheck.expectStatus}`,
+    );
   }
 
   // Error file
@@ -285,7 +297,11 @@ function renderBackend(backend: HAProxyBackend): string {
 
     // For optional backends like Pomerium that may not be running,
     // use init-addr none + Docker DNS resolver to defer DNS resolution until runtime
-    if (backend.name === "pomerium_backend" || backend.name === "sites_lookup_backend" || backend.name === "analytics_backend") {
+    if (
+      backend.name === "pomerium_backend" ||
+      backend.name === "sites_lookup_backend" ||
+      backend.name === "analytics_backend"
+    ) {
       serverLine += ` init-addr none resolvers docker resolve-opts allow-dup-ip`;
     }
 
@@ -298,7 +314,9 @@ function renderBackend(backend: HAProxyBackend): string {
 /**
  * Generate maintenance backend for a domain
  */
-function generateMaintenanceBackend(domain: DomainConfig): HAProxyBackend | null {
+function generateMaintenanceBackend(
+  domain: DomainConfig,
+): HAProxyBackend | null {
   if (!domain.maintenancePagePath) {
     return null;
   }
@@ -310,7 +328,7 @@ function generateMaintenanceBackend(domain: DomainConfig): HAProxyBackend | null
     mode: "http",
     loadBalanceMethod: "roundrobin",
     servers: [],
-    // We'll use http-request return for maintenance pages
+    errorFilePath: domain.maintenancePagePath,
   };
 }
 
@@ -341,10 +359,10 @@ function hostnameMatchesWildcard(hostname: string, pattern: string): boolean {
  */
 function findCertificateForDomain(
   hostname: string,
-  domains: DomainConfig[]
+  domains: DomainConfig[],
 ): string | null {
   // First check if domain has its own certificate
-  const ownDomain = domains.find(d => d.hostname === hostname);
+  const ownDomain = domains.find((d) => d.hostname === hostname);
   if (ownDomain?.certificatePath) {
     return ownDomain.certificatePath;
   }
@@ -359,7 +377,10 @@ function findCertificateForDomain(
         return domain.certificatePath;
       }
       // Wildcard match
-      if (altName.startsWith("*.") && hostnameMatchesWildcard(hostname, altName)) {
+      if (
+        altName.startsWith("*.") &&
+        hostnameMatchesWildcard(hostname, altName)
+      ) {
         return domain.certificatePath;
       }
     }
@@ -371,7 +392,10 @@ function findCertificateForDomain(
 /**
  * Check if a domain has SSL coverage (either its own cert or covered by wildcard)
  */
-function domainHasSSLCoverage(hostname: string, domains: DomainConfig[]): boolean {
+function domainHasSSLCoverage(
+  hostname: string,
+  domains: DomainConfig[],
+): boolean {
   return findCertificateForDomain(hostname, domains) !== null;
 }
 
@@ -386,7 +410,7 @@ export function generateHAProxyConfig(
     errorPagesDir?: string;
     executorEndpoint?: string;
     executorPort?: number;
-  } = {}
+  } = {},
 ): HAProxyConfig {
   const certsDir = options.certsDir || "/etc/haproxy/certs";
   const errorPagesDir = options.errorPagesDir || "/etc/haproxy/errors";
@@ -399,7 +423,9 @@ export function generateHAProxyConfig(
   };
 
   // Collect all domains with SSL coverage (own cert or covered by wildcard)
-  const sslDomains = domains.filter(d => d.sslEnabled && domainHasSSLCoverage(d.hostname, domains));
+  const sslDomains = domains.filter(
+    (d) => d.sslEnabled && domainHasSSLCoverage(d.hostname, domains),
+  );
 
   // HTTP Frontend (port 80)
   const httpFrontend: HAProxyFrontend = {
@@ -421,7 +447,10 @@ export function generateHAProxyConfig(
   });
 
   // HTTPS redirect rule for domains with forceHttps (must have SSL coverage)
-  const forceHttpsDomains = domains.filter(d => d.forceHttps && d.sslEnabled && domainHasSSLCoverage(d.hostname, domains));
+  const forceHttpsDomains = domains.filter(
+    (d) =>
+      d.forceHttps && d.sslEnabled && domainHasSSLCoverage(d.hostname, domains),
+  );
   if (forceHttpsDomains.length > 0) {
     // Use ACL-based approach to avoid HAProxy line length limits
     // Add ACL for each force-https domain
@@ -438,11 +467,11 @@ export function generateHAProxyConfig(
     for (let i = 0; i < forceHttpsDomains.length; i += batchSize) {
       const batch = forceHttpsDomains.slice(i, i + batchSize);
       const aclConditions = batch
-        .map(d => `force_https_${sanitizeIdentifier(d.hostname)}`)
+        .map((d) => `force_https_${sanitizeIdentifier(d.hostname)}`)
         .join(" || ");
       // Exclude ACME challenges from HTTPS redirect to allow certificate issuance
       httpFrontend.httpRequestRules!.push(
-        `redirect scheme https code 301 if !{ ssl_fc } !is_acme_challenge ${aclConditions}`
+        `redirect scheme https code 301 if !{ ssl_fc } !is_acme_challenge ${aclConditions}`,
       );
     }
   }
@@ -455,16 +484,21 @@ export function generateHAProxyConfig(
     httpsFrontend = {
       name: "https_front",
       mode: "http",
-      binds: [{
-        address: "*",
-        port: 443,
-        ssl: true,
-        certPath: `${certsDir}/`,
-      }],
+      binds: [
+        {
+          address: "*",
+          port: 443,
+          ssl: true,
+          certPath: `${certsDir}/`,
+        },
+      ],
       acls: [],
       useBackends: [],
       defaultBackend: "fallback_backend",
-      captures: ["request header Host len 64", "request header User-Agent len 256"],
+      captures: [
+        "request header Host len 64",
+        "request header User-Agent len 256",
+      ],
     };
 
     // Add ACME challenge bypass ACL to HTTPS frontend for consistency with route rules
@@ -481,19 +515,27 @@ export function generateHAProxyConfig(
     const maintenanceBackendName = `maintenance_${domainId}`;
 
     // First, check if we have valid backends for this domain
-    const enabledBackends = domain.backends.filter(b => b.enabled);
-    const staticBackends = enabledBackends.filter(b => b.backendType === "static" && b.address && b.port);
-    const siteBackends = enabledBackends.filter(b => b.backendType === "site" && b.siteRuntimeId);
-    const hasValidBackends = staticBackends.length > 0 || siteBackends.length > 0;
+    const enabledBackends = domain.backends.filter((b) => b.enabled);
+    const staticBackends = enabledBackends.filter(
+      (b) => b.backendType === "static" && b.address && b.port,
+    );
+    const siteBackends = enabledBackends.filter(
+      (b) => b.backendType === "site" && b.siteRuntimeId,
+    );
+    const hasValidBackends =
+      staticBackends.length > 0 || siteBackends.length > 0;
 
     // Check if domain has redirect rules (these don't require backends)
-    const hasRedirectRules = domain.routeRules?.some(
-      r => r.enabled && r.actionType === "redirect" && r.redirectUrl
-    ) ?? false;
+    const hasRedirectRules =
+      domain.routeRules?.some(
+        (r) => r.enabled && r.actionType === "redirect" && r.redirectUrl,
+      ) ?? false;
 
     // Skip domain if no valid backends AND no redirect rules (unless maintenance mode)
     if (!hasValidBackends && !domain.maintenanceEnabled && !hasRedirectRules) {
-      console.warn(`[HAProxy] Skipping domain ${domain.hostname}: no valid backends or redirect rules configured`);
+      console.warn(
+        `[HAProxy] Skipping domain ${domain.hostname}: no valid backends or redirect rules configured`,
+      );
       continue;
     }
 
@@ -512,9 +554,13 @@ export function generateHAProxyConfig(
           condition: `hdr(host) -i ${alias}`,
         });
         // Force HTTPS redirect for alias if domain has forceHttps
-        if (domain.forceHttps && domain.sslEnabled && domainHasSSLCoverage(domain.hostname, domains)) {
+        if (
+          domain.forceHttps &&
+          domain.sslEnabled &&
+          domainHasSSLCoverage(domain.hostname, domains)
+        ) {
           httpFrontend.httpRequestRules!.push(
-            `redirect scheme https code 301 if !{ ssl_fc } !is_acme_challenge host_alias_${aliasId}`
+            `redirect scheme https code 301 if !{ ssl_fc } !is_acme_challenge host_alias_${aliasId}`,
           );
         }
         // Route alias to same backend if we have valid backends
@@ -537,7 +583,7 @@ export function generateHAProxyConfig(
 
       // Set maintenance variable (always true when maintenance is enabled)
       httpFrontend.httpRequestRules!.push(
-        `set-var(txn.maintenance_${domainId}) bool(true) if host_${domainId}`
+        `set-var(txn.maintenance_${domainId}) bool(true) if host_${domainId}`,
       );
 
       // Bypass IPs ACL
@@ -566,6 +612,7 @@ export function generateHAProxyConfig(
         mode: "http",
         loadBalanceMethod: "roundrobin",
         servers: [],
+        errorFilePath: domain.maintenancePagePath,
       });
     }
 
@@ -579,7 +626,11 @@ export function generateHAProxyConfig(
     }
 
     // Add to HTTPS frontend if SSL is enabled and domain has certificate coverage (own or wildcard)
-    if (domain.sslEnabled && httpsFrontend && domainHasSSLCoverage(domain.hostname, domains)) {
+    if (
+      domain.sslEnabled &&
+      httpsFrontend &&
+      domainHasSSLCoverage(domain.hostname, domains)
+    ) {
       // Host ACL
       httpsFrontend.acls.push({
         name: `host_${domainId}`,
@@ -597,7 +648,7 @@ export function generateHAProxyConfig(
               domain.certificateAltNames.some(
                 (an) =>
                   an.toLowerCase() === alias.toLowerCase() ||
-                  (an.startsWith("*.") && hostnameMatchesWildcard(alias, an))
+                  (an.startsWith("*.") && hostnameMatchesWildcard(alias, an)),
               ));
           if (aliasCovered) {
             httpsFrontend.acls.push({
@@ -624,7 +675,7 @@ export function generateHAProxyConfig(
 
         // Set maintenance variable (always true when maintenance is enabled)
         httpsFrontend.httpRequestRules!.push(
-          `set-var(txn.maintenance_${domainId}) bool(true) if host_${domainId}`
+          `set-var(txn.maintenance_${domainId}) bool(true) if host_${domainId}`,
         );
 
         // Bypass IPs ACL
@@ -661,7 +712,6 @@ export function generateHAProxyConfig(
 
     // Generate backend for this domain (only if we have valid servers)
     if (hasValidBackends) {
-
       // Create servers for static backends
       // Include sanitized backend name in server name for route backend matching
       const staticServers = staticBackends.map((b, idx) => ({
@@ -697,11 +747,15 @@ export function generateHAProxyConfig(
 
       // Add request modification rules from backend config
       // Note: Uses first backend's settings if multiple backends have different configs
-      const firstBackendWithRewrite = staticBackends.find(b => b.hostRewrite || b.pathPrefixAdd || b.pathPrefixStrip);
+      const firstBackendWithRewrite = staticBackends.find(
+        (b) => b.hostRewrite || b.pathPrefixAdd || b.pathPrefixStrip,
+      );
       if (firstBackendWithRewrite) {
         // Host header rewrite
         if (firstBackendWithRewrite.hostRewrite) {
-          backend.httpRequestRules!.push(`set-header Host ${firstBackendWithRewrite.hostRewrite}`);
+          backend.httpRequestRules!.push(
+            `set-header Host ${firstBackendWithRewrite.hostRewrite}`,
+          );
           // Also update SNI for SSL backends to use the rewritten host
           for (const server of backend.servers) {
             if (server.ssl && server.sni) {
@@ -711,11 +765,15 @@ export function generateHAProxyConfig(
         }
         // Path prefix strip (must come before add)
         if (firstBackendWithRewrite.pathPrefixStrip) {
-          backend.httpRequestRules!.push(`replace-path ^${firstBackendWithRewrite.pathPrefixStrip}(.*) \\1`);
+          backend.httpRequestRules!.push(
+            `replace-path ^${firstBackendWithRewrite.pathPrefixStrip}(.*) \\1`,
+          );
         }
         // Path prefix add
         if (firstBackendWithRewrite.pathPrefixAdd) {
-          backend.httpRequestRules!.push(`replace-path ^/(.*) ${firstBackendWithRewrite.pathPrefixAdd}/\\1`);
+          backend.httpRequestRules!.push(
+            `replace-path ^/(.*) ${firstBackendWithRewrite.pathPrefixAdd}/\\1`,
+          );
         }
       }
 
@@ -725,7 +783,9 @@ export function generateHAProxyConfig(
       }
 
       // Add HTTP health check for static backends
-      const firstStaticBackendWithHealthCheck = staticBackends.find(b => b.healthCheckEnabled);
+      const firstStaticBackendWithHealthCheck = staticBackends.find(
+        (b) => b.healthCheckEnabled,
+      );
       if (firstStaticBackendWithHealthCheck) {
         backend.httpCheck = {
           path: firstStaticBackendWithHealthCheck.healthCheckPath,
@@ -762,10 +822,15 @@ export function generateHAProxyConfig(
  */
 function renderPeers(peers: HAProxyClusterPeer[]): string {
   if (peers.length === 0) return "";
-  const peersPort = parseInt(process.env.UNI_PROXY_MANAGER_HAPROXY_PEERS_PORT || "1024", 10);
+  const peersPort = parseInt(
+    process.env.UNI_PROXY_MANAGER_HAPROXY_PEERS_PORT || "1024",
+    10,
+  );
   const lines = ["peers upm_cluster"];
   for (const peer of peers) {
-    lines.push(`    peer ${sanitizeIdentifier(peer.name)} ${peer.address}:${peer.port || peersPort}`);
+    lines.push(
+      `    peer ${sanitizeIdentifier(peer.name)} ${peer.address}:${peer.port || peersPort}`,
+    );
   }
   return lines.join("\n") + "\n";
 }
@@ -801,7 +866,7 @@ export function generateHAProxyConfigString(
   options?: {
     certsDir?: string;
     errorPagesDir?: string;
-  }
+  },
 ): string {
   const config = generateHAProxyConfig(domains, options);
   return renderHAProxyConfig(config);
@@ -811,7 +876,9 @@ export function generateHAProxyConfigString(
  * Generate Pomerium forward-auth backend
  * Protected routes are proxied through Pomerium for authentication
  */
-export function generatePomeriumBackend(pomeriumUrl: string = "pomerium"): HAProxyBackend {
+export function generatePomeriumBackend(
+  pomeriumUrl: string = "pomerium",
+): HAProxyBackend {
   // Parse the URL to get host and port
   let host = pomeriumUrl;
   let port = 80;
@@ -875,7 +942,10 @@ function globToHAProxyPath(pattern: string): string {
   }
 
   // Handle comma-separated multiple paths
-  const paths = pattern.split(",").map((p) => p.trim()).filter(Boolean);
+  const paths = pattern
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   const regexPaths = paths.map((path) => {
     // Handle exact root path "/" - must match exactly, not as prefix
@@ -932,7 +1002,10 @@ function globToHAProxyPathForPomerium(pattern: string): string {
   }
 
   // Handle comma-separated multiple paths
-  const paths = pattern.split(",").map((p) => p.trim()).filter(Boolean);
+  const paths = pattern
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   const regexPaths = paths.map((path) => {
     if (path === "/") {
@@ -943,9 +1016,7 @@ function globToHAProxyPathForPomerium(pattern: string): string {
 
     // Escape special regex characters except * and **
     // For Pomerium, ALL wildcards match nested paths (use .* instead of [^/]*)
-    let regex = path
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*+/g, ".*"); // Both * and ** become .* for Pomerium
+    let regex = path.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*+/g, ".*"); // Both * and ** become .* for Pomerium
 
     // If no wildcards, make it an exact match
     if (!hasWildcard) {
@@ -969,7 +1040,7 @@ function applyRouteRules(
   frontend: HAProxyFrontend,
   domainId: string,
   hostname: string,
-  routeRules: DomainRouteRuleConfig[]
+  routeRules: DomainRouteRuleConfig[],
 ): void {
   // Sort by priority (lower number = higher priority, checked first in HAProxy)
   const sortedRules = routeRules
@@ -1039,7 +1110,7 @@ function applyRouteRules(
       // Add http-request redirect rule (exclude ACME challenges to allow certificate issuance)
       frontend.httpRequestRules = frontend.httpRequestRules || [];
       frontend.httpRequestRules.push(
-        `redirect location ${redirectTarget} code ${statusCode} if !is_acme_challenge ${routeCondition}`
+        `redirect location ${redirectTarget} code ${statusCode} if !is_acme_challenge ${routeCondition}`,
       );
     } else if (rule.actionType === "backend" || !rule.actionType) {
       // Route to backend (default behavior)
@@ -1069,19 +1140,20 @@ function generateRouteRuleBackends(
   hostname: string,
   routeRules: DomainRouteRuleConfig[],
   backends: HAProxyBackend[],
-  domainBackends?: BackendConfig[]
+  domainBackends?: BackendConfig[],
 ): HAProxyBackend[] {
   const sanitizedDomain = sanitizeIdentifier(hostname);
   const newBackends: HAProxyBackend[] = [];
 
   // Find the domain's main backend to use as a template
   const domainBackend = backends.find(
-    (b) => b.name === `backend_${sanitizedDomain}`
+    (b) => b.name === `backend_${sanitizedDomain}`,
   );
 
   // Only process backend-type rules (skip redirects)
   const backendRules = routeRules.filter(
-    (r) => r.enabled && (r.actionType === "backend" || !r.actionType) && r.backendId
+    (r) =>
+      r.enabled && (r.actionType === "backend" || !r.actionType) && r.backendId,
   );
 
   for (const rule of backendRules) {
@@ -1090,7 +1162,7 @@ function generateRouteRuleBackends(
 
     // Find the specific backend config for this route using backendId
     const targetBackendConfig = domainBackends?.find(
-      (b) => b.id === rule.backendId
+      (b) => b.id === rule.backendId,
     );
 
     if (targetBackendConfig && domainBackend) {
@@ -1100,7 +1172,7 @@ function generateRouteRuleBackends(
       // address from bleeding into each other's route backends).
       const targetName = sanitizeIdentifier(targetBackendConfig.name);
       const nameMatched = domainBackend.servers.filter((s) =>
-        s.name.includes(targetName)
+        s.name.includes(targetName),
       );
       const servers =
         nameMatched.length > 0
@@ -1110,7 +1182,7 @@ function generateRouteRuleBackends(
                 targetBackendConfig.address &&
                 targetBackendConfig.port &&
                 s.address === targetBackendConfig.address &&
-                s.port === targetBackendConfig.port
+                s.port === targetBackendConfig.port,
             );
 
       // Build httpRequestRules for the route backend
@@ -1118,15 +1190,21 @@ function generateRouteRuleBackends(
 
       // Apply host rewrite from the target backend config
       if (targetBackendConfig.hostRewrite) {
-        httpRequestRules.push(`set-header Host ${targetBackendConfig.hostRewrite}`);
+        httpRequestRules.push(
+          `set-header Host ${targetBackendConfig.hostRewrite}`,
+        );
       }
       // Apply path prefix strip (must come before add)
       if (targetBackendConfig.pathPrefixStrip) {
-        httpRequestRules.push(`replace-path ^${targetBackendConfig.pathPrefixStrip}(.*) \\1`);
+        httpRequestRules.push(
+          `replace-path ^${targetBackendConfig.pathPrefixStrip}(.*) \\1`,
+        );
       }
       // Apply path prefix add
       if (targetBackendConfig.pathPrefixAdd) {
-        httpRequestRules.push(`replace-path ^/(.*) ${targetBackendConfig.pathPrefixAdd}/\\1`);
+        httpRequestRules.push(
+          `replace-path ^/(.*) ${targetBackendConfig.pathPrefixAdd}/\\1`,
+        );
       }
 
       if (servers.length > 0) {
@@ -1146,13 +1224,18 @@ function generateRouteRuleBackends(
           mode: domainBackend.mode,
           loadBalanceMethod: domainBackend.loadBalanceMethod,
           servers: clonedServers,
-          httpRequestRules: httpRequestRules.length > 0 ? httpRequestRules : undefined,
+          httpRequestRules:
+            httpRequestRules.length > 0 ? httpRequestRules : undefined,
           httpCheck: domainBackend.httpCheck,
           errorFilePath: domainBackend.errorFilePath,
         });
       } else {
         // If no servers match by name/address, create backend with this specific server
-        if (targetBackendConfig.address && targetBackendConfig.port && targetBackendConfig.enabled) {
+        if (
+          targetBackendConfig.address &&
+          targetBackendConfig.port &&
+          targetBackendConfig.enabled
+        ) {
           newBackends.push({
             name: backendName,
             mode: domainBackend.mode,
@@ -1178,7 +1261,8 @@ function generateRouteRuleBackends(
                 },
               },
             ],
-            httpRequestRules: httpRequestRules.length > 0 ? httpRequestRules : undefined,
+            httpRequestRules:
+              httpRequestRules.length > 0 ? httpRequestRules : undefined,
             httpCheck: targetBackendConfig.healthCheckEnabled
               ? {
                   path: targetBackendConfig.healthCheckPath,
@@ -1214,7 +1298,7 @@ function applyIpAccessControl(
   frontend: HAProxyFrontend,
   domainId: string,
   hostname: string,
-  ipConfig: DomainIpAccessConfig
+  ipConfig: DomainIpAccessConfig,
 ): void {
   if (!ipConfig.enabled || ipConfig.ipAddresses.length === 0) return;
 
@@ -1243,12 +1327,12 @@ function applyIpAccessControl(
   if (ipConfig.mode === "whitelist") {
     // Block if host matches AND IP does NOT match (whitelist mode)
     frontend.httpRequestRules.push(
-      `deny deny_status 403 if ${hostAclName} !${ipAclName}`
+      `deny deny_status 403 if ${hostAclName} !${ipAclName}`,
     );
   } else {
     // Block if host matches AND IP matches (blacklist mode)
     frontend.httpRequestRules.push(
-      `deny deny_status 403 if ${hostAclName} ${ipAclName}`
+      `deny deny_status 403 if ${hostAclName} ${ipAclName}`,
     );
   }
 }
@@ -1264,7 +1348,7 @@ function applySecurityHeaders(
   frontend: HAProxyFrontend,
   domainId: string,
   hostname: string,
-  headers: DomainSecurityHeadersConfig
+  headers: DomainSecurityHeadersConfig,
 ): void {
   const sanitizedDomain = sanitizeIdentifier(hostname);
   // HAProxy variable names can't contain hyphens, only underscores
@@ -1288,7 +1372,7 @@ function applySecurityHeaders(
 
   // Stash host match into a txn var -- hdr(host) isn't available in http-response rules
   frontend.httpRequestRules.push(
-    `set-var(${hostVarName}) bool(true) if ${hostAclName}`
+    `set-var(${hostVarName}) bool(true) if ${hostAclName}`,
   );
 
   // Create ACL for checking the host variable in response rules
@@ -1299,23 +1383,29 @@ function applySecurityHeaders(
   });
 
   // X-Frame-Options
-  if (headers.xFrameOptions?.enabled && headers.xFrameOptions.value !== "disabled") {
+  if (
+    headers.xFrameOptions?.enabled &&
+    headers.xFrameOptions.value !== "disabled"
+  ) {
     let value = headers.xFrameOptions.value.toUpperCase();
     if (value === "ALLOW-FROM" && headers.xFrameOptions.allowFrom) {
       value = `ALLOW-FROM ${headers.xFrameOptions.allowFrom}`;
     }
     frontend.httpResponseRules.push(
-      `set-header X-Frame-Options "${value}" if ${hostVarAclName}`
+      `set-header X-Frame-Options "${value}" if ${hostVarAclName}`,
     );
   }
 
   // CSP frame-ancestors
-  if (headers.cspFrameAncestors?.enabled && headers.cspFrameAncestors.values.length > 0) {
+  if (
+    headers.cspFrameAncestors?.enabled &&
+    headers.cspFrameAncestors.values.length > 0
+  ) {
     const ancestors = headers.cspFrameAncestors.values
       .map((a) => (a === "self" ? "'self'" : a))
       .join(" ");
     frontend.httpResponseRules.push(
-      `set-header Content-Security-Policy "frame-ancestors ${ancestors}" if ${hostVarAclName}`
+      `set-header Content-Security-Policy "frame-ancestors ${ancestors}" if ${hostVarAclName}`,
     );
   }
 
@@ -1327,12 +1417,12 @@ function applySecurityHeaders(
     if (cors.allowOrigins.length > 0) {
       if (cors.allowOrigins.includes("*")) {
         frontend.httpResponseRules.push(
-          `set-header Access-Control-Allow-Origin "*" if ${hostVarAclName}`
+          `set-header Access-Control-Allow-Origin "*" if ${hostVarAclName}`,
         );
       } else if (cors.allowOrigins.length === 1) {
         // Single origin - set directly
         frontend.httpResponseRules.push(
-          `set-header Access-Control-Allow-Origin "${cors.allowOrigins[0]}" if ${hostVarAclName}`
+          `set-header Access-Control-Allow-Origin "${cors.allowOrigins[0]}" if ${hostVarAclName}`,
         );
       } else {
         // Multiple origins - reflect the request origin if it matches
@@ -1346,7 +1436,7 @@ function applySecurityHeaders(
 
           // Store origin match during request processing
           frontend.httpRequestRules.push(
-            `set-var(${originVarName}) str(%[req.hdr(Origin)]) if ${hostAclName} { req.hdr(Origin) -i ${origin} }`
+            `set-var(${originVarName}) str(%[req.hdr(Origin)]) if ${hostAclName} { req.hdr(Origin) -i ${origin} }`,
           );
 
           // Create ACL for response-time checking
@@ -1356,7 +1446,7 @@ function applySecurityHeaders(
           });
 
           frontend.httpResponseRules.push(
-            `set-header Access-Control-Allow-Origin %[var(${originVarName})] if ${hostVarAclName} ${originVarAclName}`
+            `set-header Access-Control-Allow-Origin %[var(${originVarName})] if ${hostVarAclName} ${originVarAclName}`,
           );
         }
       }
@@ -1365,35 +1455,35 @@ function applySecurityHeaders(
     // Access-Control-Allow-Methods
     if (cors.allowMethods.length > 0) {
       frontend.httpResponseRules.push(
-        `set-header Access-Control-Allow-Methods "${cors.allowMethods.join(", ")}" if ${hostVarAclName}`
+        `set-header Access-Control-Allow-Methods "${cors.allowMethods.join(", ")}" if ${hostVarAclName}`,
       );
     }
 
     // Access-Control-Allow-Headers
     if (cors.allowHeaders.length > 0) {
       frontend.httpResponseRules.push(
-        `set-header Access-Control-Allow-Headers "${cors.allowHeaders.join(", ")}" if ${hostVarAclName}`
+        `set-header Access-Control-Allow-Headers "${cors.allowHeaders.join(", ")}" if ${hostVarAclName}`,
       );
     }
 
     // Access-Control-Expose-Headers
     if (cors.exposeHeaders.length > 0) {
       frontend.httpResponseRules.push(
-        `set-header Access-Control-Expose-Headers "${cors.exposeHeaders.join(", ")}" if ${hostVarAclName}`
+        `set-header Access-Control-Expose-Headers "${cors.exposeHeaders.join(", ")}" if ${hostVarAclName}`,
       );
     }
 
     // Access-Control-Allow-Credentials
     if (cors.allowCredentials) {
       frontend.httpResponseRules.push(
-        `set-header Access-Control-Allow-Credentials "true" if ${hostVarAclName}`
+        `set-header Access-Control-Allow-Credentials "true" if ${hostVarAclName}`,
       );
     }
 
     // Access-Control-Max-Age
     if (cors.maxAge > 0) {
       frontend.httpResponseRules.push(
-        `set-header Access-Control-Max-Age "${cors.maxAge}" if ${hostVarAclName}`
+        `set-header Access-Control-Max-Age "${cors.maxAge}" if ${hostVarAclName}`,
       );
     }
 
@@ -1413,22 +1503,30 @@ function applySecurityHeaders(
       if (cors.allowOrigins.includes("*")) {
         preflightHeaders.push(`hdr Access-Control-Allow-Origin "*"`);
       } else if (cors.allowOrigins.length === 1) {
-        preflightHeaders.push(`hdr Access-Control-Allow-Origin "${cors.allowOrigins[0]}"`);
+        preflightHeaders.push(
+          `hdr Access-Control-Allow-Origin "${cors.allowOrigins[0]}"`,
+        );
       } else {
         // For multiple origins in preflight, we need to use a different approach
         // Since we can't dynamically set headers in http-request return, use the first origin
         // and rely on Vary: Origin to handle caching properly
-        preflightHeaders.push(`hdr Access-Control-Allow-Origin "%[req.hdr(Origin)]"`);
+        preflightHeaders.push(
+          `hdr Access-Control-Allow-Origin "%[req.hdr(Origin)]"`,
+        );
         preflightHeaders.push(`hdr Vary "Origin"`);
       }
     }
 
     if (cors.allowMethods.length > 0) {
-      preflightHeaders.push(`hdr Access-Control-Allow-Methods "${cors.allowMethods.join(", ")}"`);
+      preflightHeaders.push(
+        `hdr Access-Control-Allow-Methods "${cors.allowMethods.join(", ")}"`,
+      );
     }
 
     if (cors.allowHeaders.length > 0) {
-      preflightHeaders.push(`hdr Access-Control-Allow-Headers "${cors.allowHeaders.join(", ")}"`);
+      preflightHeaders.push(
+        `hdr Access-Control-Allow-Headers "${cors.allowHeaders.join(", ")}"`,
+      );
     }
 
     if (cors.allowCredentials) {
@@ -1439,9 +1537,10 @@ function applySecurityHeaders(
       preflightHeaders.push(`hdr Access-Control-Max-Age "${cors.maxAge}"`);
     }
 
-    const preflightHeadersStr = preflightHeaders.length > 0 ? ` ${preflightHeaders.join(" ")}` : "";
+    const preflightHeadersStr =
+      preflightHeaders.length > 0 ? ` ${preflightHeaders.join(" ")}` : "";
     frontend.httpRequestRules.push(
-      `return status 204${preflightHeadersStr} if ${hostAclName} ${preflightAclName}`
+      `return status 204${preflightHeadersStr} if ${hostAclName} ${preflightAclName}`,
     );
   }
 }
@@ -1453,7 +1552,7 @@ function applyBlockedRoutes(
   frontend: HAProxyFrontend,
   domainId: string,
   hostname: string,
-  blockedRoutes: DomainBlockedRouteConfig[]
+  blockedRoutes: DomainBlockedRouteConfig[],
 ): void {
   const enabledRoutes = blockedRoutes.filter((r) => r.enabled);
   if (enabledRoutes.length === 0) return;
@@ -1494,7 +1593,7 @@ function applyBlockedRoutes(
 
     // Add deny rule with status code
     frontend.httpRequestRules.push(
-      `deny deny_status ${route.httpStatusCode} if ${hostAclName} ${aclName}`
+      `deny deny_status ${route.httpStatusCode} if ${hostAclName} ${aclName}`,
     );
   }
 }
@@ -1506,7 +1605,7 @@ function applyBotBlocking(
   frontend: HAProxyFrontend,
   domainId: string,
   hostname: string,
-  blockBots: boolean
+  blockBots: boolean,
 ): void {
   if (!blockBots) return;
 
@@ -1538,7 +1637,7 @@ function applyBotBlocking(
 
   // Deny bot requests for this domain with 403 status
   frontend.httpRequestRules.push(
-    `deny deny_status 403 if ${hostAclName} ${botAclName}`
+    `deny deny_status 403 if ${hostAclName} ${botAclName}`,
   );
 }
 
@@ -1547,7 +1646,7 @@ function applyBotBlocking(
  */
 function applyAdvancedDomainConfig(
   frontend: HAProxyFrontend,
-  domain: DomainConfig
+  domain: DomainConfig,
 ): void {
   const domainId = sanitizeIdentifier(domain.hostname);
 
@@ -1558,12 +1657,22 @@ function applyAdvancedDomainConfig(
 
   // Apply blocked routes (high priority - deny before routing)
   if (domain.blockedRoutes && domain.blockedRoutes.length > 0) {
-    applyBlockedRoutes(frontend, domain.id, domain.hostname, domain.blockedRoutes);
+    applyBlockedRoutes(
+      frontend,
+      domain.id,
+      domain.hostname,
+      domain.blockedRoutes,
+    );
   }
 
   // Apply IP access control
   if (domain.ipAccessControl) {
-    applyIpAccessControl(frontend, domain.id, domain.hostname, domain.ipAccessControl);
+    applyIpAccessControl(
+      frontend,
+      domain.id,
+      domain.hostname,
+      domain.ipAccessControl,
+    );
   }
 
   // Apply route rules (URI-based routing)
@@ -1573,7 +1682,12 @@ function applyAdvancedDomainConfig(
 
   // Apply security headers
   if (domain.securityHeaders) {
-    applySecurityHeaders(frontend, domain.id, domain.hostname, domain.securityHeaders);
+    applySecurityHeaders(
+      frontend,
+      domain.id,
+      domain.hostname,
+      domain.securityHeaders,
+    );
   }
 }
 
@@ -1585,7 +1699,7 @@ function applyAdvancedDomainConfig(
 function applyPomeriumAuthenticateRoute(
   httpFrontend: HAProxyFrontend | undefined,
   httpsFrontend: HAProxyFrontend | undefined,
-  authenticateServiceUrl: string
+  authenticateServiceUrl: string,
 ): void {
   let hostname: string;
   try {
@@ -1596,8 +1710,14 @@ function applyPomeriumAuthenticateRoute(
   if (!hostname) return;
 
   const aclName = `pomerium_auth_host_${sanitizeIdentifier(hostname)}`;
-  const acl: HAProxyACL = { name: aclName, condition: `hdr(host) -i ${hostname}` };
-  const useBackend: HAProxyUseBackend = { backendName: "pomerium_backend", condition: aclName };
+  const acl: HAProxyACL = {
+    name: aclName,
+    condition: `hdr(host) -i ${hostname}`,
+  };
+  const useBackend: HAProxyUseBackend = {
+    backendName: "pomerium_backend",
+    condition: aclName,
+  };
 
   if (httpFrontend) {
     httpFrontend.acls.push({ ...acl });
@@ -1616,19 +1736,21 @@ function applyPomeriumProtection(
   frontend: HAProxyFrontend,
   pomeriumConfig: PomeriumConfig,
   domainId: string,
-  hostname: string
+  hostname: string,
 ): void {
   if (!pomeriumConfig.enabled) return;
 
   // Get routes for this domain, sorted by priority (highest first)
   const domainRoutes = pomeriumConfig.routes
-    .filter(r => r.domainId === domainId && r.enabled)
+    .filter((r) => r.domainId === domainId && r.enabled)
     .sort((a, b) => b.priority - a.priority);
 
   if (domainRoutes.length === 0) return;
 
   const sanitizedDomain = sanitizeIdentifier(hostname);
-  const hasProtectedRoutes = domainRoutes.some(r => r.protection === "protected");
+  const hasProtectedRoutes = domainRoutes.some(
+    (r) => r.protection === "protected",
+  );
 
   // Only add /.pomerium/* catch-all when there are protected routes.
   // Pomerium uses these internal paths (sign_in, callback, etc.) on the
@@ -1636,8 +1758,14 @@ function applyPomeriumProtection(
   if (hasProtectedRoutes) {
     const pomeriumInternalHostAcl = `pomerium_host_${sanitizedDomain}`;
     const pomeriumInternalPathAcl = `pomerium_internal_path_${sanitizedDomain}`;
-    frontend.acls.push({ name: pomeriumInternalHostAcl, condition: `hdr(host) -i ${hostname}` });
-    frontend.acls.push({ name: pomeriumInternalPathAcl, condition: `path_beg /.pomerium/` });
+    frontend.acls.push({
+      name: pomeriumInternalHostAcl,
+      condition: `hdr(host) -i ${hostname}`,
+    });
+    frontend.acls.push({
+      name: pomeriumInternalPathAcl,
+      condition: `path_beg /.pomerium/`,
+    });
     frontend.useBackends.unshift({
       backendName: "pomerium_backend",
       condition: `${pomeriumInternalHostAcl} ${pomeriumInternalPathAcl}`,
@@ -1726,13 +1854,15 @@ export function generateHAProxyConfigWithSites(
   options: {
     certsDir?: string;
     errorPagesDir?: string;
-  } = {}
+  } = {},
 ): HAProxyConfig {
   // Collect hostnames that are handled by sites
-  const siteHostnames = new Set(sites.map(s => s.hostname.toLowerCase()));
+  const siteHostnames = new Set(sites.map((s) => s.hostname.toLowerCase()));
 
   // Filter out domains whose hostnames are handled by sites
-  const filteredDomains = domains.filter(d => !siteHostnames.has(d.hostname.toLowerCase()));
+  const filteredDomains = domains.filter(
+    (d) => !siteHostnames.has(d.hostname.toLowerCase()),
+  );
 
   // Process filtered domains
   const config = generateHAProxyConfig(filteredDomains, options);
@@ -1743,18 +1873,20 @@ export function generateHAProxyConfigWithSites(
   let httpsFrontend = config.frontends.find((f) => f.name === "https_front");
 
   // Check if any sites need SSL - if so, we need HTTPS frontend
-  const sslSites = sites.filter(s => s.sslEnabled);
+  const sslSites = sites.filter((s) => s.sslEnabled);
   if (sslSites.length > 0 && !httpsFrontend) {
     // Create HTTPS frontend for sites
     httpsFrontend = {
       name: "https_front",
       mode: "http",
-      binds: [{
-        address: "*",
-        port: 443,
-        ssl: true,
-        certPath: `${certsDir}/`,
-      }],
+      binds: [
+        {
+          address: "*",
+          port: 443,
+          ssl: true,
+          certPath: `${certsDir}/`,
+        },
+      ],
       acls: [],
       useBackends: [],
       defaultBackend: "fallback_backend",
@@ -1778,11 +1910,11 @@ export function generateHAProxyConfigWithSites(
   // Add HTTPS redirect rules for SSL-enabled sites
   if (httpFrontend && sslSites.length > 0) {
     const siteHostConditions = sslSites
-      .map(s => `{ hdr(host) -i ${s.hostname} }`)
+      .map((s) => `{ hdr(host) -i ${s.hostname} }`)
       .join(" || ");
     httpFrontend.httpRequestRules = httpFrontend.httpRequestRules || [];
     httpFrontend.httpRequestRules.push(
-      `redirect scheme https code 301 if !{ ssl_fc } ${siteHostConditions}`
+      `redirect scheme https code 301 if !{ ssl_fc } ${siteHostConditions}`,
     );
   }
 
@@ -1806,7 +1938,7 @@ export function generateHAProxyConfigWithSites(
         });
 
         httpFrontend.httpRequestRules!.push(
-          `set-var(txn.site_maintenance_${siteId}) bool(true) if site_host_${siteId}`
+          `set-var(txn.site_maintenance_${siteId}) bool(true) if site_host_${siteId}`,
         );
 
         if (site.maintenanceBypassIps.length > 0) {
@@ -1858,7 +1990,7 @@ export function generateHAProxyConfigWithSites(
         });
 
         httpsFrontend.httpRequestRules!.push(
-          `set-var(txn.site_maintenance_${siteId}) bool(true) if site_host_${siteId}`
+          `set-var(txn.site_maintenance_${siteId}) bool(true) if site_host_${siteId}`,
         );
 
         if (site.maintenanceBypassIps.length > 0) {
@@ -1899,9 +2031,14 @@ export function generateHAProxyConfigWithSitesString(
   options?: {
     certsDir?: string;
     errorPagesDir?: string;
-  }
+  },
 ): string {
-  const config = generateHAProxyConfigWithSites(domains, sites, executorConfig, options);
+  const config = generateHAProxyConfigWithSites(
+    domains,
+    sites,
+    executorConfig,
+    options,
+  );
   return renderHAProxyConfig(config);
 }
 
@@ -1915,7 +2052,7 @@ export function generateHAProxyConfigWithPomerium(
   options: {
     certsDir?: string;
     errorPagesDir?: string;
-  } = {}
+  } = {},
 ): HAProxyConfig {
   // Start with base config from domains
   const config = generateHAProxyConfig(domains, options);
@@ -1938,17 +2075,31 @@ export function generateHAProxyConfigWithPomerium(
   if (hasRoutes) {
     for (const domain of domains) {
       if (httpFrontend) {
-        applyPomeriumProtection(httpFrontend, pomeriumConfig, domain.id, domain.hostname);
+        applyPomeriumProtection(
+          httpFrontend,
+          pomeriumConfig,
+          domain.id,
+          domain.hostname,
+        );
       }
       if (httpsFrontend && domain.sslEnabled) {
-        applyPomeriumProtection(httpsFrontend, pomeriumConfig, domain.id, domain.hostname);
+        applyPomeriumProtection(
+          httpsFrontend,
+          pomeriumConfig,
+          domain.id,
+          domain.hostname,
+        );
       }
     }
   }
 
   // Route authenticate service URL hostname directly to pomerium_backend
   if (hasAuthUrl) {
-    applyPomeriumAuthenticateRoute(httpFrontend, httpsFrontend, pomeriumConfig.authenticateServiceUrl!);
+    applyPomeriumAuthenticateRoute(
+      httpFrontend,
+      httpsFrontend,
+      pomeriumConfig.authenticateServiceUrl!,
+    );
   }
 
   return config;
@@ -1963,9 +2114,13 @@ export function generateHAProxyConfigWithPomeriumString(
   options?: {
     certsDir?: string;
     errorPagesDir?: string;
-  }
+  },
 ): string {
-  const config = generateHAProxyConfigWithPomerium(domains, pomeriumConfig, options);
+  const config = generateHAProxyConfigWithPomerium(
+    domains,
+    pomeriumConfig,
+    options,
+  );
   return renderHAProxyConfig(config);
 }
 
@@ -1973,7 +2128,7 @@ export function generateHAProxyConfigWithPomeriumString(
  * Generate analytics backend for HAProxy config.
  */
 export function generateAnalyticsBackend(
-  config: AnalyticsBackendConfig = { host: "analytics", port: 3003 }
+  config: AnalyticsBackendConfig = { host: "analytics", port: 3003 },
 ): HAProxyBackend {
   return {
     name: "analytics_backend",
@@ -2016,7 +2171,7 @@ export function generateAnalyticsBackend(
 function applyAnalyticsRoutes(
   frontend: HAProxyFrontend,
   analyticsRoutes: AnalyticsRouteConfig[],
-  options?: { enforceHttpsRedirect?: boolean }
+  options?: { enforceHttpsRedirect?: boolean },
 ): void {
   const enabledRoutes = analyticsRoutes.filter((r) => r.enabled);
   if (enabledRoutes.length === 0) return;
@@ -2030,7 +2185,7 @@ function applyAnalyticsRoutes(
     });
     frontend.httpRequestRules = frontend.httpRequestRules || [];
     frontend.httpRequestRules.push(
-      `redirect scheme https code 301 if !{ ssl_fc } ${analyticsPathAclName}`
+      `redirect scheme https code 301 if !{ ssl_fc } ${analyticsPathAclName}`,
     );
   }
 
@@ -2038,8 +2193,14 @@ function applyAnalyticsRoutes(
 
   for (const route of enabledRoutes) {
     // Validate trackingUuid format to prevent ACL injection.
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(route.trackingUuid)) {
-      console.warn(`[HAProxy] Skipping analytics route for ${route.hostname}: invalid tracking UUID`);
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        route.trackingUuid,
+      )
+    ) {
+      console.warn(
+        `[HAProxy] Skipping analytics route for ${route.hostname}: invalid tracking UUID`,
+      );
       continue;
     }
 
@@ -2082,7 +2243,7 @@ export function generateCompleteHAProxyConfig(
       routes: AnalyticsRouteConfig[];
       backend?: AnalyticsBackendConfig;
     };
-  } = {}
+  } = {},
 ): HAProxyConfig {
   const { sites, executorConfig, pomerium } = options;
   const certsDir = options.certsDir || "/etc/haproxy/certs";
@@ -2090,7 +2251,12 @@ export function generateCompleteHAProxyConfig(
   // Start with sites if available, otherwise base domains
   let config: HAProxyConfig;
   if (sites && sites.length > 0 && executorConfig) {
-    config = generateHAProxyConfigWithSites(domains, sites, executorConfig, options);
+    config = generateHAProxyConfigWithSites(
+      domains,
+      sites,
+      executorConfig,
+      options,
+    );
   } else {
     config = generateHAProxyConfig(domains, options);
   }
@@ -2122,7 +2288,7 @@ export function generateCompleteHAProxyConfig(
           domain.hostname,
           domain.routeRules,
           config.backends,
-          domain.backends // Pass domain backend configs for proper backend lookup
+          domain.backends, // Pass domain backend configs for proper backend lookup
         );
         config.backends.push(...routeBackends);
       }
@@ -2131,7 +2297,8 @@ export function generateCompleteHAProxyConfig(
 
   // Apply Pomerium protection if enabled
   const pomeriumHasRoutes = pomerium?.enabled && pomerium.routes.length > 0;
-  const pomeriumHasAuthUrl = pomerium?.enabled && !!pomerium.authenticateServiceUrl;
+  const pomeriumHasAuthUrl =
+    pomerium?.enabled && !!pomerium.authenticateServiceUrl;
 
   if (pomeriumHasRoutes || pomeriumHasAuthUrl) {
     // Add Pomerium backend
@@ -2139,16 +2306,28 @@ export function generateCompleteHAProxyConfig(
 
     // Get frontends
     const httpFrontend = config.frontends.find((f) => f.name === "http_front");
-    const httpsFrontend = config.frontends.find((f) => f.name === "https_front");
+    const httpsFrontend = config.frontends.find(
+      (f) => f.name === "https_front",
+    );
 
     if (pomeriumHasRoutes) {
       // Apply Pomerium protection to domains
       for (const domain of domains) {
         if (httpFrontend) {
-          applyPomeriumProtection(httpFrontend, pomerium!, domain.id, domain.hostname);
+          applyPomeriumProtection(
+            httpFrontend,
+            pomerium!,
+            domain.id,
+            domain.hostname,
+          );
         }
         if (httpsFrontend && domain.sslEnabled) {
-          applyPomeriumProtection(httpsFrontend, pomerium!, domain.id, domain.hostname);
+          applyPomeriumProtection(
+            httpsFrontend,
+            pomerium!,
+            domain.id,
+            domain.hostname,
+          );
         }
       }
 
@@ -2156,8 +2335,8 @@ export function generateCompleteHAProxyConfig(
       if (sites) {
         for (const site of sites) {
           // Find any Pomerium routes that match this site's hostname
-          const siteRoutes = pomerium!.routes.filter(r =>
-            r.hostname === site.hostname && r.enabled
+          const siteRoutes = pomerium!.routes.filter(
+            (r) => r.hostname === site.hostname && r.enabled,
           );
 
           if (siteRoutes.length > 0 && httpFrontend) {
@@ -2165,18 +2344,28 @@ export function generateCompleteHAProxyConfig(
             const siteDomainId = `site_${site.id}`;
             const siteConfig: PomeriumConfig = {
               ...pomerium!,
-              routes: siteRoutes.map(r => ({ ...r, domainId: siteDomainId })),
+              routes: siteRoutes.map((r) => ({ ...r, domainId: siteDomainId })),
             };
-            applyPomeriumProtection(httpFrontend, siteConfig, siteDomainId, site.hostname);
+            applyPomeriumProtection(
+              httpFrontend,
+              siteConfig,
+              siteDomainId,
+              site.hostname,
+            );
           }
 
           if (siteRoutes.length > 0 && httpsFrontend && site.sslEnabled) {
             const siteDomainId = `site_${site.id}`;
             const siteConfig: PomeriumConfig = {
               ...pomerium!,
-              routes: siteRoutes.map(r => ({ ...r, domainId: siteDomainId })),
+              routes: siteRoutes.map((r) => ({ ...r, domainId: siteDomainId })),
             };
-            applyPomeriumProtection(httpsFrontend, siteConfig, siteDomainId, site.hostname);
+            applyPomeriumProtection(
+              httpsFrontend,
+              siteConfig,
+              siteDomainId,
+              site.hostname,
+            );
           }
         }
       }
@@ -2184,7 +2373,11 @@ export function generateCompleteHAProxyConfig(
 
     // Route authenticate service URL hostname directly to pomerium_backend
     if (pomeriumHasAuthUrl) {
-      applyPomeriumAuthenticateRoute(httpFrontend, httpsFrontend, pomerium!.authenticateServiceUrl!);
+      applyPomeriumAuthenticateRoute(
+        httpFrontend,
+        httpsFrontend,
+        pomerium!.authenticateServiceUrl!,
+      );
     }
   }
 
@@ -2193,7 +2386,9 @@ export function generateCompleteHAProxyConfig(
     config.backends.push(generateAnalyticsBackend(options.analytics.backend));
 
     const httpFrontend = config.frontends.find((f) => f.name === "http_front");
-    const httpsFrontend = config.frontends.find((f) => f.name === "https_front");
+    const httpsFrontend = config.frontends.find(
+      (f) => f.name === "https_front",
+    );
 
     // On the HTTP frontend, enforce HTTPS redirect for /_upm/ paths
     // when an HTTPS frontend is available, ensuring analytics traffic
@@ -2203,7 +2398,8 @@ export function generateCompleteHAProxyConfig(
         enforceHttpsRedirect: !!httpsFrontend,
       });
     }
-    if (httpsFrontend) applyAnalyticsRoutes(httpsFrontend, options.analytics.routes);
+    if (httpsFrontend)
+      applyAnalyticsRoutes(httpsFrontend, options.analytics.routes);
   }
 
   return config;
@@ -2224,7 +2420,7 @@ export function generateCompleteHAProxyConfigString(
       routes: AnalyticsRouteConfig[];
       backend?: AnalyticsBackendConfig;
     };
-  }
+  },
 ): string {
   const config = generateCompleteHAProxyConfig(domains, options);
   return renderHAProxyConfig(config);

@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
 import { join } from "path";
 
@@ -13,7 +13,14 @@ const TEST_DATA_DIR = join(DOCKER_DIR, "test-data");
 const POMERIUM_ENABLED = process.env.TEST_POMERIUM_ENABLED !== "false";
 
 // Helper to run commands - handles shell-less execution
-function runCommand(cmd: string, options?: { cwd?: string; env?: Record<string, string>; stdio?: "inherit" | "pipe" | "ignore" }) {
+function runCommand(
+  cmd: string,
+  options?: {
+    cwd?: string;
+    env?: Record<string, string>;
+    stdio?: "inherit" | "pipe" | "ignore";
+  },
+) {
   try {
     // For commands like "pnpm db:push", we need to run via node to avoid shell requirement
     if (cmd.startsWith("pnpm ")) {
@@ -21,8 +28,7 @@ function runCommand(cmd: string, options?: { cwd?: string; env?: Record<string, 
       const nodePath = process.execPath;
       const pnpmPath = require.resolve("pnpm/bin/pnpm.cjs");
 
-      execSync(nodePath, {
-        args: [pnpmPath, ...pnpmArgs],
+      execFileSync(nodePath, [pnpmPath, ...pnpmArgs], {
         cwd: options?.cwd || PROJECT_ROOT,
         env: options?.env || process.env,
         stdio: options?.stdio || "inherit",
@@ -34,8 +40,7 @@ function runCommand(cmd: string, options?: { cwd?: string; env?: Record<string, 
       const executable = parts[0];
       const args = parts.slice(1);
 
-      execSync(executable, {
-        args: args,
+      execFileSync(executable, args, {
         cwd: options?.cwd || PROJECT_ROOT,
         env: options?.env || process.env,
         stdio: options?.stdio || "inherit",
@@ -50,7 +55,7 @@ function runCommand(cmd: string, options?: { cwd?: string; env?: Record<string, 
 
 function waitForContainer(
   containerName: string,
-  timeout = 60000
+  timeout = 60000,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
@@ -60,7 +65,7 @@ function waitForContainer(
         // First check if container has a health check defined
         const healthStatus = execSync(
           `docker inspect --format='{{.State.Health.Status}}' ${containerName} 2>/dev/null || echo "no_health_check"`,
-          { encoding: "utf-8" }
+          { encoding: "utf-8" },
         ).trim();
 
         // If healthy, we're done
@@ -73,7 +78,7 @@ function waitForContainer(
         if (healthStatus === "no_health_check" || healthStatus === "") {
           const runningStatus = execSync(
             `docker inspect --format='{{.State.Running}}' ${containerName} 2>/dev/null || echo "false"`,
-            { encoding: "utf-8" }
+            { encoding: "utf-8" },
           ).trim();
 
           if (runningStatus === "true") {
@@ -85,8 +90,8 @@ function waitForContainer(
         if (Date.now() - startTime > timeout) {
           reject(
             new Error(
-              `Container ${containerName} did not become healthy within ${timeout}ms`
-            )
+              `Container ${containerName} did not become healthy within ${timeout}ms`,
+            ),
           );
           return;
         }
@@ -153,16 +158,19 @@ backend test_backend
   // Write nginx index page for backend testing
   writeFileSync(
     join(TEST_DATA_DIR, "nginx/index.html"),
-    "<html><body>Test Backend OK</body></html>"
+    "<html><body>Test Backend OK</body></html>",
   );
 }
 
 // Cleanup function for process exit handlers
 function cleanupContainers(): void {
   try {
-    runCommand("docker compose -f docker/docker-compose.test.yml down -v --remove-orphans", {
-      stdio: "ignore",
-    });
+    runCommand(
+      "docker compose -f docker/docker-compose.test.yml down -v --remove-orphans",
+      {
+        stdio: "ignore",
+      },
+    );
   } catch {
     // Ignore errors during cleanup
   }
@@ -199,7 +207,9 @@ export async function setup(): Promise<void> {
     runCommand("docker compose -f docker/docker-compose.test.yml up -d");
 
     // Wait for core containers to be healthy
-    console.log("[Integration Tests] Waiting for core containers to be healthy...");
+    console.log(
+      "[Integration Tests] Waiting for core containers to be healthy...",
+    );
     await Promise.all([
       waitForContainer("uni-proxy-manager-test-postgres"),
       waitForContainer("uni-proxy-manager-test-redis"),
@@ -208,7 +218,9 @@ export async function setup(): Promise<void> {
 
     // Wait for Dex and Pomerium if enabled
     if (POMERIUM_ENABLED) {
-      console.log("[Integration Tests] Waiting for Dex OIDC provider to be healthy...");
+      console.log(
+        "[Integration Tests] Waiting for Dex OIDC provider to be healthy...",
+      );
       await waitForContainer("uni-proxy-manager-test-dex", 90000);
 
       console.log("[Integration Tests] Waiting for Pomerium to be healthy...");
@@ -218,16 +230,22 @@ export async function setup(): Promise<void> {
     }
 
     // Wait for Pebble ACME test server
-    console.log("[Integration Tests] Waiting for Pebble ACME server to be healthy...");
+    console.log(
+      "[Integration Tests] Waiting for Pebble ACME server to be healthy...",
+    );
     await waitForContainer("uni-proxy-manager-test-pebble", 60000);
 
     console.log("[Integration Tests] Pebble ACME infrastructure is ready");
   } else {
-    console.log("[Integration Tests] Running inside Docker - containers already available");
+    console.log(
+      "[Integration Tests] Running inside Docker - containers already available",
+    );
   }
 
   // Database migrations are handled by test-db-migrate service before tests run
-  console.log("[Integration Tests] Database migrations handled by test-db-migrate service");
+  console.log(
+    "[Integration Tests] Database migrations handled by test-db-migrate service",
+  );
 
   console.log("[Integration Tests] Infrastructure ready");
 }

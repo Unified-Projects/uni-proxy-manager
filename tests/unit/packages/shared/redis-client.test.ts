@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // context. Set the implementation as a separate module-level statement instead.
 const { mockRedisInstance } = vi.hoisted(() => ({
   mockRedisInstance: {
+    status: "ready",
     on: vi.fn().mockReturnThis(),
     ping: vi.fn().mockResolvedValue("PONG"),
     quit: vi.fn().mockResolvedValue("OK"),
@@ -28,8 +29,11 @@ vi.mock("../../../../packages/shared/src/config/env.js", () => ({
 }));
 
 describe("Redis Client", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    mockRedisInstance.status = "ready";
+    const Redis = (await import("ioredis")).default as ReturnType<typeof vi.fn>;
+    Redis.mockImplementation(function () { return mockRedisInstance; });
     // Reset the module to clear singleton
     vi.resetModules();
   });
@@ -118,6 +122,15 @@ describe("Redis Client", () => {
 
       expect(mockRedisInstance.on).toHaveBeenCalledWith("reconnecting", expect.any(Function));
     });
+
+    it("should register end event handler", async () => {
+      vi.resetModules();
+      const { getRedisClient } = await import("../../../../packages/shared/src/redis/client");
+
+      getRedisClient();
+
+      expect(mockRedisInstance.on).toHaveBeenCalledWith("end", expect.any(Function));
+    });
   });
 
   // ============================================================================
@@ -133,6 +146,35 @@ describe("Redis Client", () => {
       const client2 = getRedisClient();
 
       expect(client1).toBe(client2);
+    });
+
+    it("should create a new client when the cached client has ended", async () => {
+      vi.resetModules();
+      const Redis = (await import("ioredis")).default as ReturnType<typeof vi.fn>;
+      const endedClient = {
+        status: "end",
+        on: vi.fn().mockReturnThis(),
+        ping: vi.fn().mockResolvedValue("PONG"),
+        quit: vi.fn().mockResolvedValue("OK"),
+      };
+      const freshClient = {
+        status: "ready",
+        on: vi.fn().mockReturnThis(),
+        ping: vi.fn().mockResolvedValue("PONG"),
+        quit: vi.fn().mockResolvedValue("OK"),
+      };
+
+      Redis.mockImplementationOnce(function () { return endedClient; })
+        .mockImplementationOnce(function () { return freshClient; });
+
+      const { getRedisClient } = await import("../../../../packages/shared/src/redis/client");
+
+      const client1 = getRedisClient();
+      const client2 = getRedisClient();
+
+      expect(client1).toBe(endedClient);
+      expect(client2).toBe(freshClient);
+      expect(Redis).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -185,6 +227,17 @@ describe("Redis Client", () => {
       await closeRedisConnection();
 
       expect(mockRedisInstance.quit).toHaveBeenCalled();
+    });
+
+    it("should not call quit when the client has already ended", async () => {
+      vi.resetModules();
+      mockRedisInstance.status = "end";
+      const { getRedisClient, closeRedisConnection } = await import("../../../../packages/shared/src/redis/client");
+
+      getRedisClient();
+      await closeRedisConnection();
+
+      expect(mockRedisInstance.quit).not.toHaveBeenCalled();
     });
 
     it("should handle close when no client exists", async () => {

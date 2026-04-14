@@ -1,7 +1,12 @@
 import { stat, writeFile, mkdir, readFile } from "fs/promises";
 import { dirname, join } from "path";
 import { db } from "@uni-proxy-manager/database";
-import { domains, sites, pomeriumSettings, pomeriumRoutes } from "@uni-proxy-manager/database/schema";
+import {
+  domains,
+  sites,
+  pomeriumSettings,
+  pomeriumRoutes,
+} from "@uni-proxy-manager/database/schema";
 import { inArray, eq } from "drizzle-orm";
 import {
   generateHAProxyConfigString,
@@ -92,7 +97,7 @@ async function generateConfig(): Promise<string> {
           ? join(errorPagesDir, domain.errorPageId, "503.http")
           : undefined,
         maintenancePagePath: domain.maintenancePageId
-          ? join(errorPagesDir, domain.maintenancePageId, "index.html")
+          ? join(errorPagesDir, domain.maintenancePageId, "maintenance.http")
           : undefined,
         certificatePath: certActive
           ? join(certsDir, domain.id, "fullchain.pem")
@@ -154,7 +159,10 @@ async function generateConfig(): Promise<string> {
             domainId: route.domainId,
             hostname: route.domain?.hostname || "",
             pathPattern: route.pathPattern,
-            protection: route.protection as "protected" | "public" | "passthrough",
+            protection: route.protection as
+              | "protected"
+              | "public"
+              | "passthrough",
             enabled: route.enabled,
             priority: route.priority,
           }));
@@ -165,19 +173,28 @@ async function generateConfig(): Promise<string> {
             routes: routeConfigs,
           };
 
-          console.log(`[HAProxy Init] Pomerium enabled with ${routes.length} routes`);
+          console.log(
+            `[HAProxy Init] Pomerium enabled with ${routes.length} routes`,
+          );
         }
       } catch (pomeriumError) {
-        console.warn("[HAProxy Init] Could not fetch Pomerium config:", pomeriumError);
+        console.warn(
+          "[HAProxy Init] Could not fetch Pomerium config:",
+          pomeriumError,
+        );
       }
     }
 
     // Generate config with or without Pomerium
     if (pomeriumConfig && pomeriumConfig.routes.length > 0) {
-      return generateHAProxyConfigWithPomeriumString(domainConfigs, pomeriumConfig, {
-        certsDir,
-        errorPagesDir,
-      });
+      return generateHAProxyConfigWithPomeriumString(
+        domainConfigs,
+        pomeriumConfig,
+        {
+          certsDir,
+          errorPagesDir,
+        },
+      );
     }
 
     return generateHAProxyConfigString(domainConfigs, {
@@ -185,7 +202,9 @@ async function generateConfig(): Promise<string> {
       errorPagesDir,
     });
   } catch (error) {
-    console.warn("[HAProxy Init] Could not query database, generating default config");
+    console.warn(
+      "[HAProxy Init] Could not query database, generating default config",
+    );
     // Return a minimal default config if database is not ready
     return generateHAProxyConfigString([], {
       certsDir,
@@ -211,7 +230,7 @@ async function ensureHaproxyPemFiles(
       fullchainPath?: string | null;
     } | null;
   }>,
-  certsDir: string
+  certsDir: string,
 ): Promise<void> {
   for (const domain of domainsList) {
     const cert = domain.certificate;
@@ -231,16 +250,23 @@ async function ensureHaproxyPemFiles(
     }
 
     try {
-      const keyContent = await readFile(resolveCertPath(cert.keyPath, certsDir), "utf-8");
+      const keyContent = await readFile(
+        resolveCertPath(cert.keyPath, certsDir),
+        "utf-8",
+      );
       const fullchainContent = await readFile(
         resolveCertPath(cert.fullchainPath, certsDir),
-        "utf-8"
+        "utf-8",
       );
-      await writeFile(targetPath, `${keyContent}\n${fullchainContent}`, "utf-8");
+      await writeFile(
+        targetPath,
+        `${keyContent}\n${fullchainContent}`,
+        "utf-8",
+      );
     } catch (error) {
       console.warn(
         `[HAProxy Init] Failed to generate combined PEM for ${domain.hostname}:`,
-        error
+        error,
       );
     }
   }

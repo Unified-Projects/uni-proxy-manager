@@ -250,7 +250,7 @@ app.get("/", (c) => {
 
   return c.json({
     name: "Uni-Proxy-Manager API",
-    version: "0.1.0",
+    version: "0.1.3",
     extensions: extensionStatus,
     endpoints,
   });

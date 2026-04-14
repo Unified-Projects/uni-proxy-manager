@@ -100,7 +100,7 @@ export function Sidebar() {
 
       <div className="hidden border-t p-4 xl:block">
         <p className="truncate text-xs text-muted-foreground">
-          Uni-Proxy-Manager v0.1.2
+          Uni-Proxy-Manager v0.1.3
         </p>
       </div>
     </div>

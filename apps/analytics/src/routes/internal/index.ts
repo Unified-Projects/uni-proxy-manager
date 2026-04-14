@@ -1144,6 +1144,14 @@ app.get("/:configId/utm", async (c) => {
 // Live
 // ---------------------------------------------------------------------------
 
+function emptyLiveSnapshot() {
+  return {
+    activeVisitors: 0,
+    activePages: [] as { pathname: string; visitors: number }[],
+    recentEvents: [] as unknown[],
+  };
+}
+
 app.get("/:configId/live", async (c) => {
   const configId = c.req.param("configId");
   const config = getConfigById(configId);
@@ -1157,15 +1165,25 @@ app.get("/:configId/live", async (c) => {
   const activePagesKey = `analytics:active_pages:${configId}`;
   const recentEventsKey = `analytics:recent_events:${configId}`;
 
-  // Run all three Redis queries in parallel.
-  const [activeVisitors, activePagesRaw, recentEventsRaw] = await Promise.all([
-    // 1. Active visitor count from sorted set (score = timestamp).
-    redis.zcount(activeKey, fiveMinAgo, "+inf"),
-    // 2. Active pages in the last 5 minutes (value = pathname, score = timestamp).
-    redis.zrangebyscore(activePagesKey, fiveMinAgo, nowSeconds),
-    // 3. Recent events stored as JSON strings in a list.
-    redis.lrange(recentEventsKey, 0, 49),
-  ]);
+  let activeVisitors: number;
+  let activePagesRaw: string[];
+  let recentEventsRaw: string[];
+
+  try {
+    // Run all three Redis queries in parallel.
+    [activeVisitors, activePagesRaw, recentEventsRaw] = await Promise.all([
+      // 1. Active visitor count from sorted set (score = timestamp).
+      redis.zcount(activeKey, fiveMinAgo, "+inf"),
+      // 2. Active pages in the last 5 minutes (value = pathname, score = timestamp).
+      redis.zrangebyscore(activePagesKey, fiveMinAgo, nowSeconds),
+      // 3. Recent events stored as JSON strings in a list.
+      redis.lrange(recentEventsKey, 0, 49),
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[Analytics] Live snapshot unavailable | configId=${configId} | error=${message}`);
+    return c.json(emptyLiveSnapshot());
+  }
 
   // Aggregate active pages by pathname and count occurrences.
   const pageCounts = new Map<string, number>();

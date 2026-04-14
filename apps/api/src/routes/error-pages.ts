@@ -6,9 +6,18 @@ import { db } from "@uni-proxy-manager/database";
 import { errorPages, domains } from "@uni-proxy-manager/database/schema";
 import { eq } from "drizzle-orm";
 import { getErrorPagesDir } from "@uni-proxy-manager/shared/config";
-import { mkdir, rm, writeFile, stat, readdir, access, readFile } from "fs/promises";
+import {
+  mkdir,
+  rm,
+  writeFile,
+  stat,
+  readdir,
+  access,
+  readFile,
+} from "fs/promises";
 import { join, normalize, resolve } from "path";
 import { generatePreview } from "../services/preview-generator";
+import { compileMaintenancePage } from "../services/maintenance-page-compiler";
 import AdmZip from "adm-zip";
 
 /**
@@ -27,19 +36,23 @@ const MAX_ZIP_ENTRIES = 100;
  */
 async function safeExtractZip(
   zipBuffer: Buffer,
-  targetDir: string
+  targetDir: string,
 ): Promise<{ extractedCount: number; totalSize: number }> {
   const zip = new AdmZip(zipBuffer);
   const entries = zip.getEntries();
 
   // Validate ZIP size
   if (zipBuffer.length > MAX_ZIP_SIZE) {
-    throw new Error(`ZIP file exceeds maximum size of ${MAX_ZIP_SIZE / 1024 / 1024}MB`);
+    throw new Error(
+      `ZIP file exceeds maximum size of ${MAX_ZIP_SIZE / 1024 / 1024}MB`,
+    );
   }
 
   // Validate entry count
   if (entries.length > MAX_ZIP_ENTRIES) {
-    throw new Error(`ZIP contains too many files (${entries.length}). Maximum allowed: ${MAX_ZIP_ENTRIES}`);
+    throw new Error(
+      `ZIP contains too many files (${entries.length}). Maximum allowed: ${MAX_ZIP_ENTRIES}`,
+    );
   }
 
   const resolvedTargetDir = resolve(targetDir);
@@ -59,7 +72,11 @@ async function safeExtractZip(
     }
 
     const normalizedPath = normalize(entryName);
-    if (normalizedPath.startsWith("..") || normalizedPath.includes("/../") || normalizedPath.startsWith("/")) {
+    if (
+      normalizedPath.startsWith("..") ||
+      normalizedPath.includes("/../") ||
+      normalizedPath.startsWith("/")
+    ) {
       throw new Error(`Path traversal detected in ZIP entry: ${entryName}`);
     }
 
@@ -67,7 +84,10 @@ async function safeExtractZip(
     const fullPath = resolve(resolvedTargetDir, normalizedPath);
 
     // Verify the resolved path is within the target directory
-    if (!fullPath.startsWith(resolvedTargetDir + "/") && fullPath !== resolvedTargetDir) {
+    if (
+      !fullPath.startsWith(resolvedTargetDir + "/") &&
+      fullPath !== resolvedTargetDir
+    ) {
       throw new Error(`Path traversal detected in ZIP entry: ${entryName}`);
     }
 
@@ -78,7 +98,9 @@ async function safeExtractZip(
   // Check total uncompressed size (100MB limit)
   const MAX_UNCOMPRESSED_SIZE = 100 * 1024 * 1024;
   if (totalSize > MAX_UNCOMPRESSED_SIZE) {
-    throw new Error(`Total uncompressed size exceeds ${MAX_UNCOMPRESSED_SIZE / 1024 / 1024}MB limit`);
+    throw new Error(
+      `Total uncompressed size exceeds ${MAX_UNCOMPRESSED_SIZE / 1024 / 1024}MB limit`,
+    );
   }
 
   // All validations passed, now extract safely
@@ -109,7 +131,11 @@ const app = new Hono();
 /**
  * Check if preview exists, and generate if missing
  */
-async function ensurePreview(errorPageId: string, directoryPath: string, entryFile: string): Promise<string | null> {
+async function ensurePreview(
+  errorPageId: string,
+  directoryPath: string,
+  entryFile: string,
+): Promise<string | null> {
   const errorPagesDir = getErrorPagesDir();
   const previewPath = join(errorPagesDir, errorPageId, "preview.png");
 
@@ -124,7 +150,9 @@ async function ensurePreview(errorPageId: string, directoryPath: string, entryFi
       // Check if entry file exists
       await access(entryFilePath);
 
-      console.log(`[Error Pages] Generating missing preview for ${errorPageId}`);
+      console.log(
+        `[Error Pages] Generating missing preview for ${errorPageId}`,
+      );
       const generatedPath = await generatePreview(errorPageId, entryFilePath);
 
       // Update database with new preview path
@@ -135,7 +163,10 @@ async function ensurePreview(errorPageId: string, directoryPath: string, entryFi
 
       return generatedPath;
     } catch (genError) {
-      console.error(`[Error Pages] Failed to generate preview for ${errorPageId}:`, genError);
+      console.error(
+        `[Error Pages] Failed to generate preview for ${errorPageId}:`,
+        genError,
+      );
       return null;
     }
   }
@@ -167,13 +198,17 @@ app.get("/", async (c) => {
     const pagesWithPreviews = await Promise.all(
       pages.map(async (page) => {
         if (!page.previewImagePath && page.uploadedAt) {
-          const generatedPreviewPath = await ensurePreview(page.id, page.directoryPath, page.entryFile);
+          const generatedPreviewPath = await ensurePreview(
+            page.id,
+            page.directoryPath,
+            page.entryFile,
+          );
           if (generatedPreviewPath) {
             return { ...page, previewImagePath: generatedPreviewPath };
           }
         }
         return page;
-      })
+      }),
     );
 
     return c.json({ errorPages: pagesWithPreviews });
@@ -201,7 +236,7 @@ app.get("/:id/preview.png", async (c) => {
   } catch {
     const transparentPng = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-      "base64"
+      "base64",
     );
     return new Response(transparentPng, {
       status: 404,
@@ -265,7 +300,11 @@ app.get("/:id", async (c) => {
 
     // Auto-generate preview if missing and files are uploaded
     if (!page.previewImagePath && page.uploadedAt) {
-      const generatedPreviewPath = await ensurePreview(id, page.directoryPath, page.entryFile);
+      const generatedPreviewPath = await ensurePreview(
+        id,
+        page.directoryPath,
+        page.entryFile,
+      );
       if (generatedPreviewPath) {
         // Return updated page data with new preview
         page.previewImagePath = generatedPreviewPath;
@@ -345,7 +384,13 @@ app.post("/:id/upload", async (c) => {
       zipBuffer[2] !== 0x03 ||
       zipBuffer[3] !== 0x04
     ) {
-      return c.json({ error: "File does not appear to be a valid ZIP archive (invalid magic bytes)" }, 400);
+      return c.json(
+        {
+          error:
+            "File does not appear to be a valid ZIP archive (invalid magic bytes)",
+        },
+        400,
+      );
     }
 
     let extractedCount: number;
@@ -357,17 +402,22 @@ app.post("/:id/upload", async (c) => {
       totalSize = result.totalSize;
     } catch (extractError) {
       console.error("[Error Pages] ZIP extraction failed:", extractError);
-      const message = extractError instanceof Error ? extractError.message : "Invalid ZIP file";
+      const message =
+        extractError instanceof Error
+          ? extractError.message
+          : "Invalid ZIP file";
       return c.json({ error: message }, 400);
     }
 
     // Count extracted files for response
-    const extractedFiles = await readdir(page.directoryPath, { recursive: true });
+    const extractedFiles = await readdir(page.directoryPath, {
+      recursive: true,
+    });
     const fileCount = extractedCount;
 
     // Auto-detect entry file
     let actualEntryFile = page.entryFile;
-    const rootFiles = extractedFiles.filter(f => !f.includes('/'));
+    const rootFiles = extractedFiles.filter((f) => !f.includes("/"));
 
     // Check if the default entry file exists
     const entryFilePath = join(page.directoryPath, page.entryFile);
@@ -386,11 +436,31 @@ app.post("/:id/upload", async (c) => {
       }
 
       // If still not found, use first HTML file
-      if (actualEntryFile === page.entryFile && !rootFiles.includes(actualEntryFile)) {
-        const firstHtml = rootFiles.find(f => f.endsWith('.html') || f.endsWith('.http'));
+      if (
+        actualEntryFile === page.entryFile &&
+        !rootFiles.includes(actualEntryFile)
+      ) {
+        const firstHtml = rootFiles.find(
+          (f) => f.endsWith(".html") || f.endsWith(".http"),
+        );
         if (firstHtml) {
           actualEntryFile = firstHtml;
         }
+      }
+    }
+
+    if (page.type === "maintenance") {
+      try {
+        await compileMaintenancePage(page.directoryPath, actualEntryFile);
+      } catch (compileError) {
+        console.error(
+          "[Error Pages] Failed to compile maintenance page:",
+          compileError,
+        );
+        return c.json(
+          { error: "Failed to compile maintenance page for HAProxy serving" },
+          500,
+        );
       }
     }
 
@@ -442,6 +512,23 @@ app.put("/:id", zValidator("json", updateErrorPageSchema), async (c) => {
 
     if (!existing) {
       return c.json({ error: "Error page not found" }, 404);
+    }
+
+    const nextEntryFile = data.entryFile ?? existing.entryFile;
+
+    if (existing.type === "maintenance" && existing.uploadedAt) {
+      try {
+        await compileMaintenancePage(existing.directoryPath, nextEntryFile);
+      } catch (compileError) {
+        console.error(
+          "[Error Pages] Failed to recompile maintenance page:",
+          compileError,
+        );
+        return c.json(
+          { error: "Failed to compile maintenance page for HAProxy serving" },
+          500,
+        );
+      }
     }
 
     const [updated] = await db
@@ -527,7 +614,10 @@ app.post("/:id/regenerate-preview", async (c) => {
         errorPage: updated,
       });
     } catch (previewError) {
-      console.error("[Error Pages] Failed to regenerate preview:", previewError);
+      console.error(
+        "[Error Pages] Failed to regenerate preview:",
+        previewError,
+      );
       return c.json({ error: "Failed to generate preview" }, 500);
     }
   } catch (error) {
@@ -569,10 +659,7 @@ app.post("/:id/assign/:domainId", async (c) => {
       updateData.errorPageId = id;
     }
 
-    await db
-      .update(domains)
-      .set(updateData)
-      .where(eq(domains.id, domainId));
+    await db.update(domains).set(updateData).where(eq(domains.id, domainId));
 
     return c.json({ success: true });
   } catch (error) {
@@ -615,10 +702,7 @@ app.delete("/:id/assign/:domainId", async (c) => {
       updateData.errorPageId = null;
     }
 
-    await db
-      .update(domains)
-      .set(updateData)
-      .where(eq(domains.id, domainId));
+    await db.update(domains).set(updateData).where(eq(domains.id, domainId));
 
     return c.json({ success: true });
   } catch (error) {

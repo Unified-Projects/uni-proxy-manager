@@ -19,7 +19,11 @@ import {
 import { inArray, eq, and, ne } from "drizzle-orm";
 import { Queue } from "bullmq";
 import { getRedisClient } from "@uni-proxy-manager/shared/redis";
-import { QUEUES, type HaproxyReloadJobData, type ClusterSyncJobData } from "@uni-proxy-manager/queue";
+import {
+  QUEUES,
+  type HaproxyReloadJobData,
+  type ClusterSyncJobData,
+} from "@uni-proxy-manager/queue";
 import {
   renderHAProxyConfig,
   generateCompleteHAProxyConfig,
@@ -123,7 +127,10 @@ app.get("/status", async (c) => {
             }
           }
           // Final fallback: try_pid_start_time (for multi-process HAProxy)
-          else if (info.try_pid_start_time && typeof info.try_pid_start_time === "number") {
+          else if (
+            info.try_pid_start_time &&
+            typeof info.try_pid_start_time === "number"
+          ) {
             // uptime_sec not available, using try_pid_start_time fallback
             const now = Math.floor(Date.now() / 1000);
             const uptimeSeconds = now - info.try_pid_start_time;
@@ -131,7 +138,9 @@ app.get("/status", async (c) => {
               uptime = formatUptime(uptimeSeconds);
             }
           } else {
-            console.warn("[HAProxy] No uptime information available from HAProxy process");
+            console.warn(
+              "[HAProxy] No uptime information available from HAProxy process",
+            );
           }
         } catch (infoError) {
           console.warn("[HAProxy] Could not get detailed info:", infoError);
@@ -141,7 +150,7 @@ app.get("/status", async (c) => {
           const stats = await getHaproxyStats();
           currentConnections = stats.frontends.reduce(
             (sum, frontend) => sum + (frontend.current_sessions || 0),
-            0
+            0,
           );
         } catch (statsError) {
           console.warn("[HAProxy] Could not get stats:", statsError);
@@ -311,7 +320,7 @@ app.post("/reload", async (c) => {
           triggeredBy: "api",
           force,
         },
-        { jobId: `haproxy-reload-${ts}` }
+        { jobId: `haproxy-reload-${ts}` },
       );
 
       // Also fan out to cluster nodes if any exist
@@ -320,20 +329,26 @@ app.post("/reload", async (c) => {
           where: ne(clusterNodes.isLocal, true),
         });
         if (hasRemoteNodes) {
-          const clusterQueue = new Queue<ClusterSyncJobData>(QUEUES.CLUSTER_SYNC, {
-            connection: redis,
-          });
+          const clusterQueue = new Queue<ClusterSyncJobData>(
+            QUEUES.CLUSTER_SYNC,
+            {
+              connection: redis,
+            },
+          );
           await clusterQueue.add(
             `cluster-sync-${ts}`,
             { reason: "HAProxy reload", triggeredBy: "domain-change" },
-            { jobId: `cluster-sync-reload-${ts}` }
+            { jobId: `cluster-sync-reload-${ts}` },
           );
         }
       } catch (clusterErr) {
         console.warn("[HAProxy] Could not enqueue cluster sync:", clusterErr);
       }
     } catch (queueError) {
-      console.error("[HAProxy] Failed to queue reload job, attempting direct reload:", queueError);
+      console.error(
+        "[HAProxy] Failed to queue reload job, attempting direct reload:",
+        queueError,
+      );
       reloadMethod = "direct";
 
       // Fallback: attempt direct HAProxy reload
@@ -342,21 +357,27 @@ app.post("/reload", async (c) => {
         const running = await isHaproxyRunning();
         if (running) {
           // Send SIGUSR2 to reload config gracefully
-          await execAsync("kill -USR2 $(cat /var/run/haproxy.pid 2>/dev/null) 2>/dev/null || haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -sf $(cat /var/run/haproxy.pid 2>/dev/null) 2>/dev/null || true");
+          await execAsync(
+            "kill -USR2 $(cat /var/run/haproxy.pid 2>/dev/null) 2>/dev/null || haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -sf $(cat /var/run/haproxy.pid 2>/dev/null) 2>/dev/null || true",
+          );
         }
       } catch (directError) {
         console.error("[HAProxy] Direct reload also failed:", directError);
-        reloadError = directError instanceof Error ? directError.message : "Direct reload failed";
+        reloadError =
+          directError instanceof Error
+            ? directError.message
+            : "Direct reload failed";
       }
     }
 
     return c.json({
       success: true,
-      message: reloadMethod === "queue"
-        ? "Config updated and reload queued"
-        : reloadError
-          ? `Config updated but reload failed: ${reloadError}`
-          : "Config updated and direct reload attempted",
+      message:
+        reloadMethod === "queue"
+          ? "Config updated and reload queued"
+          : reloadError
+            ? `Config updated but reload failed: ${reloadError}`
+            : "Config updated and direct reload attempted",
       changed: true,
       reloadMethod,
       reloadError,
@@ -442,7 +463,10 @@ async function generateConfig(): Promise<string> {
     ipRulesByDomain.set(rule.domainId, rule);
   }
 
-  const securityHeadersByDomain = new Map<string, (typeof allSecurityHeaders)[0]>();
+  const securityHeadersByDomain = new Map<
+    string,
+    (typeof allSecurityHeaders)[0]
+  >();
   for (const headers of allSecurityHeaders) {
     securityHeadersByDomain.set(headers.domainId, headers);
   }
@@ -460,7 +484,10 @@ async function generateConfig(): Promise<string> {
   });
 
   // Group shared backends by domain ID, only include enabled ones
-  const sharedBackendsByDomain = new Map<string, typeof allSharedBackendLinks[0]["sharedBackend"][]>();
+  const sharedBackendsByDomain = new Map<
+    string,
+    (typeof allSharedBackendLinks)[0]["sharedBackend"][]
+  >();
   for (const link of allSharedBackendLinks) {
     if (!link.sharedBackend || !link.sharedBackend.enabled) continue;
     const existing = sharedBackendsByDomain.get(link.domainId) || [];
@@ -470,9 +497,15 @@ async function generateConfig(): Promise<string> {
 
   // Build certificate coverage map for wildcard matching
   // Maps hostnames to their covering domain (for certificate path lookup)
-  const certificateCoverage = new Map<string, { domainId: string; altNames: string[] }>();
+  const certificateCoverage = new Map<
+    string,
+    { domainId: string; altNames: string[] }
+  >();
   for (const domain of allDomains) {
-    if (domain.certificate?.status === "active" && domain.certificate.altNames) {
+    if (
+      domain.certificate?.status === "active" &&
+      domain.certificate.altNames
+    ) {
       certificateCoverage.set(domain.hostname, {
         domainId: domain.id,
         altNames: domain.certificate.altNames as string[],
@@ -492,7 +525,9 @@ async function generateConfig(): Promise<string> {
   }
 
   // Find certificate coverage for a hostname (own or wildcard)
-  function findCertificateCoverage(hostname: string): { domainId: string; altNames: string[] } | null {
+  function findCertificateCoverage(
+    hostname: string,
+  ): { domainId: string; altNames: string[] } | null {
     // Check if domain has its own certificate
     const own = certificateCoverage.get(hostname);
     if (own) return own;
@@ -503,7 +538,10 @@ async function generateConfig(): Promise<string> {
         if (altName.toLowerCase() === hostname.toLowerCase()) {
           return certInfo;
         }
-        if (altName.startsWith("*.") && hostnameMatchesWildcard(hostname, altName)) {
+        if (
+          altName.startsWith("*.") &&
+          hostnameMatchesWildcard(hostname, altName)
+        ) {
           return certInfo;
         }
       }
@@ -514,7 +552,9 @@ async function generateConfig(): Promise<string> {
   const domainConfigs: DomainConfig[] = allDomains.map((domain) => {
     const certActive = domain.certificate?.status === "active";
     // Check for wildcard coverage if domain doesn't have its own cert
-    const coveringCert = !certActive ? findCertificateCoverage(domain.hostname) : null;
+    const coveringCert = !certActive
+      ? findCertificateCoverage(domain.hostname)
+      : null;
     const hasCertCoverage = certActive || coveringCert !== null;
     const sslEnabled = domain.sslEnabled && hasCertCoverage;
 
@@ -525,20 +565,21 @@ async function generateConfig(): Promise<string> {
     const blockedRoutes = blockedRoutesByDomain.get(domain.id);
 
     // Build route rules config
-    const routeRulesConfig: DomainRouteRuleConfig[] | undefined = routeRules?.map((r) => ({
-      id: r.id,
-      name: r.name,
-      pathPattern: r.pathPattern,
-      actionType: r.actionType,
-      backendId: r.backendId || undefined,
-      backendName: r.backend?.name || undefined,
-      redirectUrl: r.redirectUrl || undefined,
-      redirectStatusCode: r.redirectStatusCode || undefined,
-      redirectPreservePath: r.redirectPreservePath ?? undefined,
-      redirectPreserveQuery: r.redirectPreserveQuery ?? undefined,
-      priority: r.priority,
-      enabled: r.enabled,
-    }));
+    const routeRulesConfig: DomainRouteRuleConfig[] | undefined =
+      routeRules?.map((r) => ({
+        id: r.id,
+        name: r.name,
+        pathPattern: r.pathPattern,
+        actionType: r.actionType,
+        backendId: r.backendId || undefined,
+        backendName: r.backend?.name || undefined,
+        redirectUrl: r.redirectUrl || undefined,
+        redirectStatusCode: r.redirectStatusCode || undefined,
+        redirectPreservePath: r.redirectPreservePath ?? undefined,
+        redirectPreserveQuery: r.redirectPreserveQuery ?? undefined,
+        priority: r.priority,
+        enabled: r.enabled,
+      }));
 
     // Build IP access control config
     const ipAccessControl: DomainIpAccessConfig | undefined = ipRule
@@ -550,43 +591,54 @@ async function generateConfig(): Promise<string> {
       : undefined;
 
     // Build security headers config
-    const securityHeadersConfig: DomainSecurityHeadersConfig | undefined = securityHeaders
-      ? {
-          xFrameOptions: securityHeaders.xFrameOptionsEnabled
-            ? {
-                enabled: securityHeaders.xFrameOptionsEnabled,
-                value: (securityHeaders.xFrameOptionsValue || "deny") as "deny" | "sameorigin" | "allow-from" | "disabled",
-                allowFrom: securityHeaders.xFrameOptionsAllowFrom || undefined,
-              }
-            : undefined,
-          cspFrameAncestors: securityHeaders.cspFrameAncestorsEnabled
-            ? {
-                enabled: securityHeaders.cspFrameAncestorsEnabled,
-                values: (securityHeaders.cspFrameAncestors as string[]) || [],
-              }
-            : undefined,
-          cors: securityHeaders.corsEnabled
-            ? {
-                enabled: securityHeaders.corsEnabled,
-                allowOrigins: (securityHeaders.corsAllowOrigins as string[]) || [],
-                allowMethods: (securityHeaders.corsAllowMethods as string[]) || [],
-                allowHeaders: (securityHeaders.corsAllowHeaders as string[]) || [],
-                exposeHeaders: (securityHeaders.corsExposeHeaders as string[]) || [],
-                allowCredentials: securityHeaders.corsAllowCredentials,
-                maxAge: securityHeaders.corsMaxAge || 86400,
-              }
-            : undefined,
-        }
-      : undefined;
+    const securityHeadersConfig: DomainSecurityHeadersConfig | undefined =
+      securityHeaders
+        ? {
+            xFrameOptions: securityHeaders.xFrameOptionsEnabled
+              ? {
+                  enabled: securityHeaders.xFrameOptionsEnabled,
+                  value: (securityHeaders.xFrameOptionsValue || "deny") as
+                    | "deny"
+                    | "sameorigin"
+                    | "allow-from"
+                    | "disabled",
+                  allowFrom:
+                    securityHeaders.xFrameOptionsAllowFrom || undefined,
+                }
+              : undefined,
+            cspFrameAncestors: securityHeaders.cspFrameAncestorsEnabled
+              ? {
+                  enabled: securityHeaders.cspFrameAncestorsEnabled,
+                  values: (securityHeaders.cspFrameAncestors as string[]) || [],
+                }
+              : undefined,
+            cors: securityHeaders.corsEnabled
+              ? {
+                  enabled: securityHeaders.corsEnabled,
+                  allowOrigins:
+                    (securityHeaders.corsAllowOrigins as string[]) || [],
+                  allowMethods:
+                    (securityHeaders.corsAllowMethods as string[]) || [],
+                  allowHeaders:
+                    (securityHeaders.corsAllowHeaders as string[]) || [],
+                  exposeHeaders:
+                    (securityHeaders.corsExposeHeaders as string[]) || [],
+                  allowCredentials: securityHeaders.corsAllowCredentials,
+                  maxAge: securityHeaders.corsMaxAge || 86400,
+                }
+              : undefined,
+          }
+        : undefined;
 
     // Build blocked routes config
-    const blockedRoutesConfig: DomainBlockedRouteConfig[] | undefined = blockedRoutes?.map((r) => ({
-      id: r.id,
-      pathPattern: r.pathPattern,
-      httpStatusCode: r.httpStatusCode,
-      customResponseBody: r.customResponseBody || undefined,
-      enabled: r.enabled,
-    }));
+    const blockedRoutesConfig: DomainBlockedRouteConfig[] | undefined =
+      blockedRoutes?.map((r) => ({
+        id: r.id,
+        pathPattern: r.pathPattern,
+        httpStatusCode: r.httpStatusCode,
+        customResponseBody: r.customResponseBody || undefined,
+        enabled: r.enabled,
+      }));
 
     return {
       id: domain.id,
@@ -599,16 +651,17 @@ async function generateConfig(): Promise<string> {
         ? join(errorPagesDir, domain.errorPageId, "503.http")
         : undefined,
       maintenancePagePath: domain.maintenancePageId
-        ? join(errorPagesDir, domain.maintenancePageId, "index.html")
+        ? join(errorPagesDir, domain.maintenancePageId, "maintenance.http")
         : undefined,
       certificatePath: certActive
         ? join(certsDir, domain.id, "fullchain.pem")
         : coveringCert
           ? join(certsDir, coveringCert.domainId, "fullchain.pem")
           : undefined,
-      certificateAltNames: certActive && domain.certificate?.altNames
-        ? (domain.certificate.altNames as string[])
-        : coveringCert?.altNames,
+      certificateAltNames:
+        certActive && domain.certificate?.altNames
+          ? (domain.certificate.altNames as string[])
+          : coveringCert?.altNames,
       backends: [
         ...domain.backends
           .filter((b) => b.enabled)
@@ -702,7 +755,10 @@ async function generateConfig(): Promise<string> {
           domainId: route.domainId,
           hostname: route.domain?.hostname || "",
           pathPattern: route.pathPattern,
-          protection: route.protection as "protected" | "public" | "passthrough",
+          protection: route.protection as
+            | "protected"
+            | "public"
+            | "passthrough",
           enabled: route.enabled,
           priority: route.priority,
         }));
@@ -720,7 +776,12 @@ async function generateConfig(): Promise<string> {
   }
 
   // Fetch analytics config if extension is enabled
-  let analyticsOption: { routes: AnalyticsRouteConfig[]; backend?: { host: string; port: number } } | undefined;
+  let analyticsOption:
+    | {
+        routes: AnalyticsRouteConfig[];
+        backend?: { host: string; port: number };
+      }
+    | undefined;
 
   if (isExtensionEnabled("analytics")) {
     try {
@@ -742,7 +803,8 @@ async function generateConfig(): Promise<string> {
           }));
 
         if (analyticsRoutes.length > 0) {
-          const analyticsEndpoint = process.env.UNI_PROXY_MANAGER_ANALYTICS_ENDPOINT;
+          const analyticsEndpoint =
+            process.env.UNI_PROXY_MANAGER_ANALYTICS_ENDPOINT;
           let backend: { host: string; port: number } | undefined;
 
           if (analyticsEndpoint) {
@@ -750,7 +812,7 @@ async function generateConfig(): Promise<string> {
               const url = new URL(
                 analyticsEndpoint.startsWith("http")
                   ? analyticsEndpoint
-                  : `http://${analyticsEndpoint}`
+                  : `http://${analyticsEndpoint}`,
               );
               backend = {
                 host: url.hostname,
@@ -769,7 +831,10 @@ async function generateConfig(): Promise<string> {
         }
       }
     } catch (analyticsError) {
-      console.warn("[HAProxy] Could not fetch analytics config:", analyticsError);
+      console.warn(
+        "[HAProxy] Could not fetch analytics config:",
+        analyticsError,
+      );
     }
   }
 
@@ -809,9 +874,11 @@ async function generateConfig(): Promise<string> {
     // Check if any domain for this site has a site-type backend
     const siteHasBackend = new Set<string>();
     for (const [siteId, domainIds] of siteToDomainIds) {
-      const hasSiteBackend = domainIds.some(domainId => {
-        const domain = allDomains.find(d => d.id === domainId);
-        return domain?.backends.some(b => b.backendType === "site" && b.siteId === siteId && b.enabled);
+      const hasSiteBackend = domainIds.some((domainId) => {
+        const domain = allDomains.find((d) => d.id === domainId);
+        return domain?.backends.some(
+          (b) => b.backendType === "site" && b.siteId === siteId && b.enabled,
+        );
       });
       if (hasSiteBackend) {
         siteHasBackend.add(siteId);
@@ -864,7 +931,8 @@ async function generateConfig(): Promise<string> {
       pomerium: pomeriumConfig,
       analytics: analyticsOption,
     });
-    sitesHAConfig.clusterPeers = clusterPeers.length > 0 ? clusterPeers : undefined;
+    sitesHAConfig.clusterPeers =
+      clusterPeers.length > 0 ? clusterPeers : undefined;
     return renderHAProxyConfig(sitesHAConfig);
   }
 
@@ -882,7 +950,8 @@ async function generateConfig(): Promise<string> {
       pomerium: pomeriumConfig,
       analytics: analyticsOption,
     });
-    completeHAConfig.clusterPeers = clusterPeers.length > 0 ? clusterPeers : undefined;
+    completeHAConfig.clusterPeers =
+      clusterPeers.length > 0 ? clusterPeers : undefined;
     return renderHAProxyConfig(completeHAConfig);
   }
 
@@ -890,7 +959,8 @@ async function generateConfig(): Promise<string> {
     certsDir,
     errorPagesDir,
   });
-  baseHAConfig.clusterPeers = clusterPeers.length > 0 ? clusterPeers : undefined;
+  baseHAConfig.clusterPeers =
+    clusterPeers.length > 0 ? clusterPeers : undefined;
   return renderHAProxyConfig(baseHAConfig);
 }
 
@@ -898,7 +968,10 @@ async function fetchClusterPeers(): Promise<HAProxyClusterPeer[]> {
   try {
     const allNodes = await db.query.clusterNodes.findMany();
     if (allNodes.length < 2) return [];
-    const peersPort = parseInt(process.env.UNI_PROXY_MANAGER_HAPROXY_PEERS_PORT || "1024", 10);
+    const peersPort = parseInt(
+      process.env.UNI_PROXY_MANAGER_HAPROXY_PEERS_PORT || "1024",
+      10,
+    );
     return allNodes.map((node) => {
       let address = node.apiUrl;
       try {
@@ -930,7 +1003,7 @@ async function ensureHaproxyPemFiles(
       fullchainPath?: string | null;
     } | null;
   }>,
-  certsDir: string
+  certsDir: string,
 ): Promise<void> {
   for (const domain of domainsList) {
     const cert = domain.certificate;
@@ -950,16 +1023,23 @@ async function ensureHaproxyPemFiles(
     }
 
     try {
-      const keyContent = await readFile(resolveCertPath(cert.keyPath, certsDir), "utf-8");
+      const keyContent = await readFile(
+        resolveCertPath(cert.keyPath, certsDir),
+        "utf-8",
+      );
       const fullchainContent = await readFile(
         resolveCertPath(cert.fullchainPath, certsDir),
-        "utf-8"
+        "utf-8",
       );
-      await writeFile(targetPath, `${keyContent}\n${fullchainContent}`, "utf-8");
+      await writeFile(
+        targetPath,
+        `${keyContent}\n${fullchainContent}`,
+        "utf-8",
+      );
     } catch (error) {
       console.warn(
         `[HAProxy] Failed to generate combined PEM for ${domain.hostname}:`,
-        error
+        error,
       );
     }
   }
