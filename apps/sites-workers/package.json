@@ -15,7 +15,7 @@
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
     "bullmq": "^5.71.0",
-    "ioredis": "5.10.0",
+    "ioredis": "5.10.1",
     "playwright": "^1.58.2",
     "tar": "^7.5.11"
   },

@@ -69,13 +69,13 @@
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
     "bullmq": "^5.71.0",
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "^0.45.2",
     "eslint": "^10.0.3",
     "hono": "^4.12.8",
-    "ioredis": "5.10.0",
+    "ioredis": "5.10.1",
     "jsdom": "^25.0.1",
     "nanoid": "^5.1.7",
-    "postgres": "^3.4.8",
+    "postgres": "^3.4.9",
     "prettier": "^3.8.1",
     "turbo": "^2.8.17",
     "typescript": "^5.9.3",
@@ -104,7 +104,7 @@
       "rollup@>=4.0.0 <5.0.0": ">=4.59.0",
       "ajv@<7.0.0": "6.14.0",
       "fast-xml-parser@>=5.0.0 <6.0.0": ">=5.3.8",
-      "ioredis": "5.10.0"
+      "ioredis": "5.10.1"
     }
   }
 }

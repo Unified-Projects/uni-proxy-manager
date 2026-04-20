@@ -83,7 +83,7 @@
         "@octokit/app": "^15.1.6",
         "@octokit/rest": "^21.1.1",
         "@octokit/webhooks": "^14.2.0",
-        "ioredis": "5.10.0",
+        "ioredis": "5.10.1",
         "jsonwebtoken": "^9.0.3",
         "zod": "^3.25.76"
     },
