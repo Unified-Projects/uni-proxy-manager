@@ -15,7 +15,7 @@
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
     "acme-client": "^5.4.0",
-    "bullmq": "^5.71.0",
+    "bullmq": "^5.76.2",
     "dockerode": "^4.0.2",
     "drizzle-orm": "^0.45.1",
     "ioredis": "5.10.0"
