@@ -12,20 +12,20 @@
     "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "@clickhouse/client": "^1.18.2",
+    "@clickhouse/client": "^1.18.3",
     "@hono/zod-validator": "^0.7.6",
     "@uni-proxy-manager/database": "workspace:*",
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
     "bcrypt": "^5.1.1",
-    "bullmq": "^5.71.0",
+    "bullmq": "^5.76.2",
     "drizzle-orm": "^0.45.1",
-    "hono": "^4.12.8",
+    "hono": "^4.12.15",
     "ioredis": "5.10.0",
     "jose": "^5.10.0",
-    "nanoid": "^5.1.7",
+    "nanoid": "^5.1.9",
     "ua-parser-js": "^2.0.9",
-    "ws": "^8.19.0",
+    "ws": "^8.20.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
