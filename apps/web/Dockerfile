@@ -1,5 +1,5 @@
 # Build stage
-FROM node:25-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm turbo run build --filter=@uni-proxy-manager/web
 
 # Production stage
-FROM node:25-alpine AS runner
+FROM node:26-alpine AS runner
 
 WORKDIR /app
 
