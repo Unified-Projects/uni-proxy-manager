@@ -33,7 +33,7 @@ services:
       - visual-network
 
   visual-minio:
-    image: minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: uni-proxy-visual-minio
     command: server /data --console-address ":9001"
     environment:
@@ -198,7 +198,7 @@ services:
         condition: service_started
 
   visual-haproxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.2-alpine
     container_name: uni-proxy-visual-haproxy
     user: root
     ports:

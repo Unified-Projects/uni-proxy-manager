@@ -90,10 +90,20 @@ function resolveLocalAssetPath(
   return absolutePath;
 }
 
+function capturedGroup(match: RegExpExecArray, index: number): string {
+  const value = match[index];
+  if (value === undefined) {
+    throw new Error(
+      `Capture group ${index} did not participate in match: ${match[0]}`,
+    );
+  }
+  return value;
+}
+
 async function replaceAsync(
   input: string,
   pattern: RegExp,
-  replacer: (...args: RegExpExecArray) => Promise<string>,
+  replacer: (match: RegExpExecArray) => Promise<string>,
 ): Promise<string> {
   const matches = Array.from(input.matchAll(pattern));
   if (matches.length === 0) {
@@ -104,7 +114,7 @@ async function replaceAsync(
     matches.map(async (match) => ({
       index: match.index ?? 0,
       length: match[0].length,
-      value: await replacer(match as RegExpExecArray),
+      value: await replacer(match),
     })),
   );
 
@@ -154,6 +164,9 @@ async function inlineCss(
     /@import\s+(?:url\((['"]?)([^)"']+)\1\)|(['"])([^"']+)\3)\s*;/gi,
     async (match) => {
       const reference = match[2] || match[4];
+      if (!reference) {
+        return match[0];
+      }
       const resolved = resolveLocalAssetPath(reference, currentDir, rootDir);
       if (!resolved) {
         return match[0];
@@ -168,7 +181,7 @@ async function inlineCss(
     output,
     /url\((['"]?)([^)"']+)\1\)/gi,
     async (match) => {
-      const reference = match[2].trim();
+      const reference = capturedGroup(match, 2).trim();
       const resolved = resolveLocalAssetPath(reference, currentDir, rootDir);
       if (!resolved) {
         return match[0];
@@ -211,9 +224,11 @@ function inlineSrcsetValue(
         return candidate;
       }
 
-      const parts = trimmed.split(/\s+/);
-      const reference = parts[0];
-      const descriptor = parts.slice(1).join(" ");
+      const [reference, ...descriptorParts] = trimmed.split(/\s+/);
+      if (!reference) {
+        return candidate;
+      }
+      const descriptor = descriptorParts.join(" ");
       const replacement = await replaceReference(reference);
       if (!replacement) {
         return candidate;
@@ -246,7 +261,7 @@ async function inlineHtml(
     output,
     /<link\b([^>]*\brel\s*=\s*["'][^"']*stylesheet[^"']*["'][^>]*)\bhref\s*=\s*(["'])([^"']+)\2([^>]*)>/gi,
     async (match) => {
-      const reference = match[3];
+      const reference = capturedGroup(match, 3);
       const resolved = resolveLocalAssetPath(reference, entryDir, rootDir);
       if (!resolved) {
         return match[0];
@@ -261,7 +276,7 @@ async function inlineHtml(
     output,
     /<script\b([^>]*?)\bsrc\s*=\s*(["'])([^"']+)\2([^>]*)>\s*<\/script>/gi,
     async (match) => {
-      const reference = match[3];
+      const reference = capturedGroup(match, 3);
       const resolved = resolveLocalAssetPath(reference, entryDir, rootDir);
       if (!resolved) {
         return match[0];
@@ -276,7 +291,12 @@ async function inlineHtml(
     output,
     /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
     async (match) => {
-      const css = await inlineCss(match[2], entryDir, rootDir, state);
+      const css = await inlineCss(
+        capturedGroup(match, 2),
+        entryDir,
+        rootDir,
+        state,
+      );
       return `<style${match[1]}>${css}</style>`;
     },
   );
@@ -285,7 +305,12 @@ async function inlineHtml(
     output,
     /\bstyle\s*=\s*(["'])([\s\S]*?)\1/gi,
     async (match) => {
-      const css = await inlineCss(match[2], entryDir, rootDir, state);
+      const css = await inlineCss(
+        capturedGroup(match, 2),
+        entryDir,
+        rootDir,
+        state,
+      );
       return `style=${match[1]}${css}${match[1]}`;
     },
   );
@@ -294,7 +319,10 @@ async function inlineHtml(
     output,
     /\bsrcset\s*=\s*(["'])([\s\S]*?)\1/gi,
     async (match) => {
-      const srcset = await inlineSrcsetValue(match[2], replaceReference);
+      const srcset = await inlineSrcsetValue(
+        capturedGroup(match, 2),
+        replaceReference,
+      );
       return `srcset=${match[1]}${srcset}${match[1]}`;
     },
   );
@@ -303,7 +331,7 @@ async function inlineHtml(
     output,
     /\b(src|poster|data)\s*=\s*(["'])([^"']+)\2/gi,
     async (match) => {
-      const replacement = await replaceReference(match[3]);
+      const replacement = await replaceReference(capturedGroup(match, 3));
       if (!replacement) {
         return match[0];
       }

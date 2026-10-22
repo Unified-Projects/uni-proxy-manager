@@ -1,9 +1,9 @@
-FROM oven/bun:1.3-alpine AS builder
+FROM oven/bun:1.4-alpine AS builder
 
 WORKDIR /app
 
 # Install curl, nodejs (for pnpm), socat (for HAProxy stats socket), and Chromium for Playwright
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && apk add --no-cache \
     curl \
     nodejs \
     npm \
@@ -21,7 +21,7 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9.15.4
 
 # Create non-root user
 RUN addgroup -g 1001 -S appuser && \
@@ -50,12 +50,12 @@ COPY --chown=appuser:appuser tsconfig.json ./
 # Create a pruned production bundle of the api package
 RUN pnpm --filter=@uni-proxy-manager/api --prod deploy /prod/api
 
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 
 WORKDIR /app
 
 # Install curl, Chromium and dependencies for Playwright preview generation
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && apk add --no-cache \
     curl \
     chromium \
     nss \

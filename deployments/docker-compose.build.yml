@@ -13,7 +13,7 @@ services:
   # HAProxy - Main Reverse Proxy
   # ===========================================
   haproxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.2-alpine
     container_name: uni-proxy-manager-haproxy
     restart: unless-stopped
     user: "0"
@@ -251,7 +251,7 @@ services:
   # Dashboard Proxy (routes to web + api)
   # ===========================================
   dashboard-proxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.2-alpine
     container_name: uni-proxy-manager-dashboard-proxy
     restart: unless-stopped
     ports:

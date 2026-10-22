@@ -1,8 +1,8 @@
 # Build stage
-FROM rust:1.94-alpine AS builder
+FROM rust:1.99-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
+RUN apk upgrade --no-cache && apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
 
 WORKDIR /app
 
@@ -23,10 +23,10 @@ RUN touch src/main.rs && \
     cargo build --release
 
 # Runtime stage
-FROM alpine:3.23
+FROM alpine:3.24
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
 
 WORKDIR /app
 

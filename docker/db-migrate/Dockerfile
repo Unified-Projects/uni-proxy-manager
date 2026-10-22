@@ -1,4 +1,4 @@
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 
 WORKDIR /app
 
@@ -6,7 +6,7 @@ WORKDIR /app
 ENV PNPM_HOME="/root/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-RUN apk add --no-cache curl && \
+RUN apk upgrade --no-cache && apk add --no-cache curl && \
     curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.shrc" SHELL="$(which sh)" PNPM_VERSION="9.15.4" sh -
 
 # Copy root config files
