@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-23
+
+### Security
+- Update Next.js to 16.4.2 for GHSA-2xp9-vwfh-vxw4 (CVE-2026-75604), GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and earlier 16.x advisories
+- Update protobufjs (CVE-2026-41242), tar, adm-zip, drizzle-orm, hono, nanoid, ws, axios, form-data, lodash, node-forge, postcss, vite and uuid to patched releases
+- Rebuild all images on Alpine 3.24 bases and upgrade OS packages at build time, covering OpenSSL (CVE-2026-31789), gnutls, openexr and the Go standard library in bundled binaries (CVE-2025-68121)
+
+### Changed
+- Move the bundled HAProxy image from 2.9 (end of life) to the 3.2 LTS release
+- Pin Pomerium to v0.33.4 instead of `latest`
+- Move images to Bun 1.4, Node.js 26 and Rust 1.99
+- Release builds always pull fresh base images and bypass the layer cache
+
 ## [0.1.3] - 2026-04-14
 
 ### Added
