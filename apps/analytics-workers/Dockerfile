@@ -1,4 +1,4 @@
-FROM oven/bun:1.3-alpine AS builder
+FROM oven/bun:1.4-alpine AS builder
 
 WORKDIR /app
 
@@ -6,7 +6,7 @@ WORKDIR /app
 ENV PNPM_HOME="/root/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-RUN apk add --no-cache curl && \
+RUN apk upgrade --no-cache && apk add --no-cache curl && \
     curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.shrc" SHELL="$(which sh)" PNPM_VERSION="9.15.4" sh -
 
 # Copy root config files
@@ -35,11 +35,11 @@ RUN pnpm turbo run build --filter=@uni-proxy-manager/analytics-workers...
 # Create a pruned production bundle of the analytics-workers package
 RUN pnpm --filter=@uni-proxy-manager/analytics-workers --prod deploy /prod/analytics-workers
 
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache curl
+RUN apk upgrade --no-cache && apk add --no-cache curl
 
 # Create non-root user
 RUN addgroup -g 1001 -S appuser && \

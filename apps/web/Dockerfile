@@ -1,10 +1,10 @@
 # Build stage
-FROM node:25-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9.15.4
 
 # Copy root config files
 COPY package.json pnpm-workspace.yaml turbo.json ./
@@ -27,9 +27,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm turbo run build --filter=@uni-proxy-manager/web
 
 # Production stage
-FROM node:25-alpine AS runner
+FROM node:26-alpine AS runner
 
 WORKDIR /app
+
+RUN apk upgrade --no-cache
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

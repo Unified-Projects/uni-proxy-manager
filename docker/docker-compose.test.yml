@@ -118,7 +118,7 @@ services:
       - test-network
 
   test-haproxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.2-alpine
     container_name: uni-proxy-manager-test-haproxy
     volumes:
       - ./test-data/haproxy:/usr/local/etc/haproxy:rw
@@ -254,7 +254,7 @@ services:
       - test-network
 
   test-pomerium:
-    image: pomerium/pomerium:v0.26.0
+    image: pomerium/pomerium:v0.33.4
     container_name: uni-proxy-manager-test-pomerium
     volumes:
       - ${PWD}/docker/test-data/pomerium:/pomerium:rw

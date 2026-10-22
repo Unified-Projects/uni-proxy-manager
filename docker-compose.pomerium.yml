@@ -19,7 +19,7 @@
 services:
   # Pomerium All-in-One Container
   pomerium:
-    image: pomerium/pomerium:latest
+    image: pomerium/pomerium:v0.33.4
     container_name: uni-proxy-pomerium
     restart: unless-stopped
     command: ["--config", "/config/config.yaml"]

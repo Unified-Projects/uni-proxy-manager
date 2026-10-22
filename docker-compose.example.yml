@@ -3,7 +3,7 @@
 
 services:
   haproxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.2-alpine
     restart: unless-stopped
     user: "0"
     ports:
@@ -162,7 +162,7 @@ services:
         condition: service_healthy
 
   dashboard-proxy:
-    image: haproxy:2.9-alpine
+    image: haproxy:3.2-alpine
     restart: unless-stopped
     ports:
       - "3000:80"
