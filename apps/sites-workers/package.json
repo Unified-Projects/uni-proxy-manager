@@ -14,14 +14,13 @@
     "@uni-proxy-manager/database": "workspace:*",
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
-    "bullmq": "^5.71.0",
-    "ioredis": "5.10.0",
-    "playwright": "^1.58.2",
-    "tar": "^7.5.11"
+    "bullmq": "^5.81.5",
+    "ioredis": "5.11.1",
+    "playwright": "^1.64.1",
+    "tar": "^7.5.22"
   },
   "devDependencies": {
-    "@types/node": "^25.4.0",
-    "@types/tar": "^6.1.13",
+    "@types/node": "^25.9.9",
     "typescript": "^5.9.3"
   }
 }

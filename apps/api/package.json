@@ -13,28 +13,26 @@
     "test": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "@hono/zod-openapi": "^1.2.0",
-    "@hono/zod-validator": "^0.7.6",
-    "@types/tar": "^6.1.13",
+    "@hono/zod-openapi": "^1.6.3",
+    "@hono/zod-validator": "^0.9.1",
     "@uni-proxy-manager/database": "workspace:*",
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "bcryptjs": "^2.4.3",
-    "bullmq": "^5.71.0",
-    "drizzle-orm": "^0.45.1",
-    "hono": "^4.12.8",
-    "ioredis": "5.10.0",
+    "bullmq": "^5.81.5",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "ioredis": "5.11.1",
     "jose": "^5.10.0",
-    "nanoid": "^5.1.7",
-    "playwright": "^1.58.2",
-    "tar": "^7.5.11",
+    "nanoid": "^5.1.16",
+    "playwright": "^1.64.1",
+    "tar": "^7.5.22",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.7",
     "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^25.4.0",
+    "@types/node": "^25.9.9",
     "typescript": "^5.9.3"
   }
 }

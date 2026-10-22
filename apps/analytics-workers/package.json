@@ -7,18 +7,18 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
-    "@clickhouse/client": "^1.18.2",
+    "@clickhouse/client": "^1.24.1",
     "@uni-proxy-manager/database": "workspace:*",
     "@uni-proxy-manager/queue": "workspace:*",
     "@uni-proxy-manager/shared": "workspace:*",
-    "bullmq": "^5.71.0",
-    "drizzle-orm": "^0.45.1",
-    "ioredis": "5.10.0",
-    "nanoid": "^5.1.7",
-    "picomatch": "^4.0.3"
+    "bullmq": "^5.81.5",
+    "drizzle-orm": "^0.45.4",
+    "ioredis": "5.11.1",
+    "nanoid": "^5.1.16",
+    "picomatch": "^4.0.7"
   },
   "devDependencies": {
-    "@types/picomatch": "^4.0.2",
+    "@types/picomatch": "^4.0.3",
     "typescript": "^5.9.3"
   }
 }
