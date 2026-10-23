@@ -20,7 +20,6 @@ const updateSettingsSchema = z.object({
   cookieName: z.string().min(1).max(50).optional().or(z.literal("")),
   cookieExpire: z.string().optional().or(z.literal("")),
   cookieDomain: z.string().nullable().optional().or(z.literal("")),
-  cookieSecure: z.boolean().optional(),
   cookieHttpOnly: z.boolean().optional(),
   logLevel: z.enum(["debug", "info", "warn", "error"]).optional().or(z.literal("")),
   forwardAuthUrl: z.string().url().optional().or(z.literal("")),
@@ -134,8 +133,6 @@ app.put("/", zValidator("json", updateSettingsSchema), async (c) => {
       updateData.cookieExpire = data.cookieExpire;
     if (data.cookieDomain !== undefined)
       updateData.cookieDomain = data.cookieDomain;
-    if (data.cookieSecure !== undefined)
-      updateData.cookieSecure = data.cookieSecure;
     if (data.cookieHttpOnly !== undefined)
       updateData.cookieHttpOnly = data.cookieHttpOnly;
     if (data.logLevel !== undefined && data.logLevel !== "")

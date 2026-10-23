@@ -54,7 +54,6 @@ async function enablePomerium(): Promise<void> {
   const res = await testClient.put("/api/pomerium/settings", {
     enabled: true,
     authenticateServiceUrl: "http://test-pomerium:80",
-    cookieSecure: false,
   });
   expect(res.status).toBe(200);
 }

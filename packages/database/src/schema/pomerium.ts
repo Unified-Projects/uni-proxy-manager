@@ -156,7 +156,6 @@ export const pomeriumSettings = pgTable("pomerium_settings", {
   cookieName: text("cookie_name").default("_pomerium"),
   cookieExpire: text("cookie_expire").default("14h"),
   cookieDomain: text("cookie_domain"),
-  cookieSecure: boolean("cookie_secure").default(true),
   cookieHttpOnly: boolean("cookie_http_only").default(true),
 
   // Global enable/disable

@@ -70,7 +70,6 @@ interface PomeriumConfig {
   cookie_expire?: string;
   cookie_domain?: string;
   cookie_http_only?: boolean;
-  cookie_secure?: boolean;
   log_level?: string;
   idp_provider?: string;
   idp_client_id?: string;
@@ -325,9 +324,6 @@ function generatePolicyConfig(
     config.cookie_domain = settings.cookieDomain;
   }
   config.cookie_http_only = settings.cookieHttpOnly ?? true;
-  if (settings.cookieSecure !== null && settings.cookieSecure !== undefined) {
-    config.cookie_secure = settings.cookieSecure;
-  }
   config.log_level = settings.logLevel || "info";
 
   // Build IdP configuration based on default IdP

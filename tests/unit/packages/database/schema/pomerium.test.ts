@@ -232,7 +232,6 @@ describe("Pomerium Schema", () => {
       expect(pomeriumSettings.cookieName.name).toBe("cookie_name");
       expect(pomeriumSettings.cookieExpire.name).toBe("cookie_expire");
       expect(pomeriumSettings.cookieDomain.name).toBe("cookie_domain");
-      expect(pomeriumSettings.cookieSecure.name).toBe("cookie_secure");
       expect(pomeriumSettings.cookieHttpOnly.name).toBe("cookie_http_only");
     });
 
@@ -417,7 +416,6 @@ describe("Pomerium Schema", () => {
         cookieName: "_pomerium",
         cookieExpire: "14h",
         cookieDomain: ".example.com",
-        cookieSecure: true,
         cookieHttpOnly: true,
         enabled: true,
         logLevel: "info",
