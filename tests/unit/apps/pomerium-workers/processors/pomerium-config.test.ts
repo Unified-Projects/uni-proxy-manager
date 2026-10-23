@@ -116,7 +116,6 @@ function makeSettings(overrides: Record<string, unknown> = {}) {
     cookieName: "_pomerium",
     cookieExpire: "14h",
     cookieDomain: null,
-    cookieSecure: true,
     cookieHttpOnly: true,
     logLevel: "info",
     ...overrides,
@@ -708,22 +707,13 @@ describe("processPomeriumConfig", () => {
       expect(config.cookie_expire).toBe("14h");
     });
 
-    it("sets cookie_secure: true", async () => {
+    it("does not emit cookie_secure, which Pomerium no longer accepts", async () => {
       vi.mocked(db.query.pomeriumSettings.findFirst).mockResolvedValueOnce(
-        makeSettings({ cookieSecure: true }) as never
+        makeSettings() as never
       );
       await processPomeriumConfig(createMockJob());
       const config = getWrittenConfig();
-      expect(config.cookie_secure).toBe(true);
-    });
-
-    it("sets cookie_secure: false", async () => {
-      vi.mocked(db.query.pomeriumSettings.findFirst).mockResolvedValueOnce(
-        makeSettings({ cookieSecure: false }) as never
-      );
-      await processPomeriumConfig(createMockJob());
-      const config = getWrittenConfig();
-      expect(config.cookie_secure).toBe(false);
+      expect(config).not.toHaveProperty("cookie_secure");
     });
 
     it("sets cookie_http_only: true", async () => {

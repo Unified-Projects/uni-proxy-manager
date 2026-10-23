@@ -122,7 +122,6 @@ describe("Pomerium Platform Route E2E", () => {
     const settingsRes = await testClient.put("/api/pomerium/settings", {
       enabled: true,
       authenticateServiceUrl: POMERIUM_INTERNAL_URL,
-      cookieSecure: false,
     });
     if (settingsRes.status !== 200) {
       throw new Error(`Failed to update settings: ${JSON.stringify(settingsRes.body)}`);

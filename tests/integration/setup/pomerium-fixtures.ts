@@ -367,7 +367,6 @@ export function createPomeriumSettingsFixture(
     cookieName: string;
     cookieExpire: string;
     cookieDomain: string | null;
-    cookieSecure: boolean;
     cookieHttpOnly: boolean;
     logLevel: "debug" | "info" | "warn" | "error";
     forwardAuthUrl: string;
@@ -378,7 +377,6 @@ export function createPomeriumSettingsFixture(
   cookieName: string;
   cookieExpire: string;
   cookieDomain: string | null;
-  cookieSecure: boolean;
   cookieHttpOnly: boolean;
   logLevel: "debug" | "info" | "warn" | "error";
   forwardAuthUrl: string;
@@ -389,7 +387,6 @@ export function createPomeriumSettingsFixture(
     cookieName: overrides.cookieName || "_pomerium_test",
     cookieExpire: overrides.cookieExpire || "14h",
     cookieDomain: overrides.cookieDomain ?? null,
-    cookieSecure: overrides.cookieSecure ?? false,
     cookieHttpOnly: overrides.cookieHttpOnly ?? true,
     logLevel: overrides.logLevel || "debug",
     forwardAuthUrl: overrides.forwardAuthUrl || "http://localhost:5080/.pomerium/verify",

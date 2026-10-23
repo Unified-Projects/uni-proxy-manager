@@ -21,7 +21,10 @@ services:
   pomerium:
     image: pomerium/pomerium:v0.33.4
     container_name: uni-proxy-pomerium
-    restart: unless-stopped
+    # always rather than unless-stopped: the workers reload this container by sending a
+    # signal through the Docker kill API, which Docker records as a manual stop, so
+    # unless-stopped would leave it down after a reboot.
+    restart: always
     command: ["--config", "/config/config.yaml"]
     environment:
       # Databroker storage - not in generated config file
@@ -31,13 +34,12 @@ services:
     networks:
       - uni-proxy-manager
     healthcheck:
-      # wget exits 0 for 2xx, 8 for 4xx/5xx, 4 for network failure.
-      # Accept exit codes 0 or 8 (got HTTP response) — only fail on no connection (exit 4).
-      test: ["CMD-SHELL", "wget -q --tries=1 -O /dev/null http://localhost:80/.pomerium/ping 2>&1; CODE=$?; [ $CODE -eq 0 ] || [ $CODE -eq 8 ]"]
+      # The image has no shell; `pomerium health` queries the built-in health service on 127.0.0.1:28080.
+      test: ["CMD", "/bin/pomerium", "health"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

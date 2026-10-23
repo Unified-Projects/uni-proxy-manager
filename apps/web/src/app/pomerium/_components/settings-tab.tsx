@@ -88,7 +88,6 @@ function SettingsForm({
       cookieName: settings?.cookieName || "_pomerium",
       cookieExpire: settings?.cookieExpire || "14h",
       cookieDomain: settings?.cookieDomain || "",
-      cookieSecure: settings?.cookieSecure ?? true,
       cookieHttpOnly: settings?.cookieHttpOnly ?? true,
       logLevel: (settings?.logLevel as "debug" | "info" | "warn" | "error") || "info",
       enabled: settings?.enabled ?? false,
@@ -201,22 +200,6 @@ function SettingsForm({
               <p className="text-sm text-muted-foreground">
                 Domain for the authentication cookie. Leave empty for default.
               </p>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Secure Cookie</Label>
-                <p className="text-sm text-muted-foreground">
-                  Only send cookie over HTTPS.
-                </p>
-              </div>
-              <Controller
-                control={form.control}
-                name="cookieSecure"
-                render={({ field }) => (
-                  <Switch checked={field.value} onCheckedChange={field.onChange} />
-                )}
-              />
             </div>
 
             <div className="flex items-center justify-between">

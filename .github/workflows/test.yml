@@ -181,7 +181,6 @@ jobs:
                   authenticate_service_url: http://test-pomerium:80
                   cookie_name: _pomerium_test
                   cookie_expire: 14h
-                  cookie_secure: false
                   cookie_http_only: true
                   log_level: debug
                   routes:
@@ -207,7 +206,6 @@ jobs:
                   cookie_name: _pomerium
                   cookie_expire: 14h
                   cookie_http_only: true
-                  cookie_secure: false
                   log_level: info
                   idp_provider: oidc
                   idp_client_id: pomerium-e2e

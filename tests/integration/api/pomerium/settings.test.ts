@@ -62,7 +62,7 @@ describe("Pomerium Settings API", () => {
       expect(settings).toHaveProperty("enabled");
       expect(settings).toHaveProperty("cookieName");
       expect(settings).toHaveProperty("cookieExpire");
-      expect(settings).toHaveProperty("cookieSecure");
+      expect(settings).not.toHaveProperty("cookieSecure");
       expect(settings).toHaveProperty("cookieHttpOnly");
       expect(settings).toHaveProperty("logLevel");
       expect(settings).toHaveProperty("createdAt");
@@ -113,12 +113,10 @@ describe("Pomerium Settings API", () => {
       await testClient.get("/api/pomerium/settings");
 
       const response = await testClient.put("/api/pomerium/settings", {
-        cookieSecure: false,
         cookieHttpOnly: false,
       });
 
       expect(response.status).toBe(200);
-      expect(response.body.settings.cookieSecure).toBe(false);
       expect(response.body.settings.cookieHttpOnly).toBe(false);
     });
 

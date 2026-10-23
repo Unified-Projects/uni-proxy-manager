@@ -779,7 +779,6 @@ export interface PomeriumSettings {
   cookieName: string | null;
   cookieExpire: string | null;
   cookieDomain: string | null;
-  cookieSecure: boolean | null;
   cookieHttpOnly: boolean | null;
   logLevel: string | null;
   forwardAuthUrl: string | null;
@@ -797,7 +796,6 @@ export interface UpdatePomeriumSettingsData {
   cookieName?: string;
   cookieExpire?: string;
   cookieDomain?: string;
-  cookieSecure?: boolean;
   cookieHttpOnly?: boolean;
   logLevel?: "debug" | "info" | "warn" | "error";
   forwardAuthUrl?: string;
