@@ -2,12 +2,14 @@
  * Certificate Issue Processor Unit Tests
  *
  * Covers how the issue processor records state for first issuance versus
- * renewal, and the HAProxy reload it queues after a successful issue.
+ * renewal, the DNS-01 records it publishes and removes for an order, and the
+ * HAProxy reload it queues after a successful issue.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Job } from "bullmq";
 import type { CertificateIssueJobData } from "@uni-proxy-manager/queue";
+import { createFakeCloudflare, type FakeCloudflare } from "../fake-cloudflare";
 
 const {
   mockQueueAdd,
@@ -48,7 +50,12 @@ vi.mock("@uni-proxy-manager/shared/redis", () => ({
 }));
 
 vi.mock("@uni-proxy-manager/shared/config", () => ({
-  getAcmeConfig: vi.fn(() => ({ email: "admin@example.com", staging: false })),
+  getAcmeConfig: vi.fn(() => ({
+    email: "admin@example.com",
+    staging: false,
+    directoryUrl: "https://acme.example/directory",
+    dnsPropagation: { maxChecks: 3, intervalMs: 5000 },
+  })),
   getCertsDir: vi.fn(() => "/data/certs"),
 }));
 
@@ -205,6 +212,160 @@ describe("Certificate Issue Processor", () => {
         renewalAttempts: 0,
         lastError: null,
       });
+    });
+  });
+
+  describe("DNS-01 challenges", () => {
+    const RECORD_NAME = "_acme-challenge.example.com";
+    let cloudflare: FakeCloudflare;
+
+    function createApexAndWildcardJob(): Job<CertificateIssueJobData> {
+      return createJob({ hostname: "example.com", altNames: ["*.example.com"] });
+    }
+
+    beforeEach(() => {
+      delete process.env.ACME_DIRECTORY_URL;
+      cloudflare = createFakeCloudflare();
+      vi.stubGlobal("fetch", cloudflare.fetch);
+
+      mockFindProvider.mockResolvedValue({
+        id: "dns-1",
+        type: "cloudflare",
+        credentials: { apiToken: "token" },
+      });
+      mockAcmeClient.getAuthorizations.mockResolvedValue([
+        {
+          identifier: { value: "example.com" },
+          challenges: [{ type: "dns-01", status: "pending", url: "challenge-apex" }],
+        },
+        {
+          identifier: { value: "example.com" },
+          wildcard: true,
+          challenges: [{ type: "dns-01", status: "pending", url: "challenge-wildcard" }],
+        },
+      ]);
+      mockAcmeClient.getChallengeKeyAuthorization.mockImplementation(
+        async (challenge: { url: string }) =>
+          challenge.url === "challenge-apex" ? "value-apex" : "value-wildcard"
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("should publish every TXT value before completing any challenge", async () => {
+      const visibleAtCompletion: string[][] = [];
+      mockAcmeClient.completeChallenge.mockImplementation(async () => {
+        visibleAtCompletion.push(cloudflare.publishedValues(RECORD_NAME));
+      });
+
+      const result = await processCertificateIssue(createApexAndWildcardJob());
+
+      expect(result.success).toBe(true);
+      expect(mockAcmeClient.completeChallenge).toHaveBeenCalledTimes(2);
+      expect(visibleAtCompletion).toEqual([
+        ["value-apex", "value-wildcard"],
+        ["value-apex", "value-wildcard"],
+      ]);
+    });
+
+    it("should keep the records until the order is finalised", async () => {
+      let valuesAtFinalise: string[] = [];
+      mockAcmeClient.finalizeOrder.mockImplementation(async () => {
+        valuesAtFinalise = cloudflare.publishedValues(RECORD_NAME);
+        return { status: "valid" };
+      });
+
+      await processCertificateIssue(createApexAndWildcardJob());
+
+      expect(valuesAtFinalise).toEqual(["value-apex", "value-wildcard"]);
+    });
+
+    it("should wait for both values to propagate before completing challenges", async () => {
+      cloudflare.unpropagated.add("value-wildcard");
+      mockAcmeClient.completeChallenge.mockImplementation(async () => {
+        expect(cloudflare.unpropagated.size).toBe(0);
+      });
+
+      const issuing = processCertificateIssue(createApexAndWildcardJob());
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockAcmeClient.completeChallenge).not.toHaveBeenCalled();
+
+      cloudflare.unpropagated.clear();
+      await vi.advanceTimersByTimeAsync(5000);
+      const result = await issuing;
+
+      expect(result.success).toBe(true);
+      expect(mockAcmeClient.completeChallenge).toHaveBeenCalledTimes(2);
+    });
+
+    it("should delete both records by id after a successful issue", async () => {
+      const unrelated = cloudflare.seed(RECORD_NAME, "value-other-order");
+
+      const result = await processCertificateIssue(createApexAndWildcardJob());
+
+      expect(result.success).toBe(true);
+      expect(cloudflare.deletedIds).toHaveLength(2);
+      expect(cloudflare.deletedIds).not.toContain(unrelated.id);
+      expect(cloudflare.publishedValues(RECORD_NAME)).toEqual(["value-other-order"]);
+    });
+
+    it("should delete both records when validation fails", async () => {
+      mockAcmeClient.waitForValidStatus.mockImplementation(async (resource: { url?: string }) => {
+        if (resource.url === "challenge-wildcard") {
+          throw new Error("Incorrect TXT record");
+        }
+        return resource;
+      });
+
+      const result = await processCertificateIssue(createApexAndWildcardJob());
+
+      expect(result).toMatchObject({ success: false, error: "Incorrect TXT record" });
+      expect(mockAcmeClient.finalizeOrder).not.toHaveBeenCalled();
+      expect(cloudflare.deletedIds).toHaveLength(2);
+      expect(cloudflare.records.size).toBe(0);
+    });
+
+    it("should delete both records when finalising the order fails", async () => {
+      mockAcmeClient.finalizeOrder.mockRejectedValue(new Error("Order not ready"));
+
+      const result = await processCertificateIssue(createApexAndWildcardJob());
+
+      expect(result).toMatchObject({ success: false, error: "Order not ready" });
+      expect(cloudflare.records.size).toBe(0);
+    });
+
+    it("should delete both records when propagation times out", async () => {
+      cloudflare.unpropagated.add("value-wildcard");
+
+      const issuing = processCertificateIssue(createApexAndWildcardJob());
+      await vi.advanceTimersByTimeAsync(10000);
+      const result = await issuing;
+
+      expect(result).toMatchObject({
+        success: false,
+        error: `DNS propagation timeout for ${RECORD_NAME}`,
+      });
+      expect(mockAcmeClient.completeChallenge).not.toHaveBeenCalled();
+      expect(cloudflare.records.size).toBe(0);
+    });
+
+    it("should delete the records already created when a later create fails", async () => {
+      const createRecord = cloudflare.fetch.getMockImplementation()!;
+      let posts = 0;
+      cloudflare.fetch.mockImplementation(async (input, init) => {
+        if (init?.method === "POST" && ++posts === 2) {
+          return new Response("rate limited", { status: 429 });
+        }
+        return createRecord(input, init);
+      });
+
+      const result = await processCertificateIssue(createApexAndWildcardJob());
+
+      expect(result).toMatchObject({ success: false, error: "Failed to create DNS record: rate limited" });
+      expect(cloudflare.deletedIds).toHaveLength(1);
+      expect(cloudflare.records.size).toBe(0);
     });
   });
 

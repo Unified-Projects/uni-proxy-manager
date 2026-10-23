@@ -114,6 +114,8 @@ const envSchema = z.object({
     .transform(coerceBoolean)
     .default(false),
   UNI_PROXY_MANAGER_ACME_DIRECTORY_URL: z.string().optional(),
+  UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_CHECKS: z.coerce.number().int().positive().default(60),
+  UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_INTERVAL_SECONDS: z.coerce.number().positive().default(5),
 
   // DNS Providers (can be set via env for initial seeding)
   UNI_PROXY_MANAGER_CLOUDFLARE_API_TOKEN: z.string().optional(),
@@ -221,6 +223,10 @@ export function getAcmeConfig(): {
   email?: string;
   staging: boolean;
   directoryUrl: string;
+  dnsPropagation: {
+    maxChecks: number;
+    intervalMs: number;
+  };
 } {
   const env = getEnv();
   const staging = env.UNI_PROXY_MANAGER_ACME_STAGING;
@@ -233,6 +239,10 @@ export function getAcmeConfig(): {
     email: env.UNI_PROXY_MANAGER_ACME_EMAIL,
     staging,
     directoryUrl,
+    dnsPropagation: {
+      maxChecks: env.UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_CHECKS,
+      intervalMs: env.UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_INTERVAL_SECONDS * 1000,
+    },
   };
 }
 

@@ -344,6 +344,28 @@ describe("Config/Env", () => {
       const config = getAcmeConfig();
       expect(config.directoryUrl).toBe("https://custom-acme.example.com");
     });
+
+    it("should allow 60 DNS propagation checks 5 seconds apart by default", async () => {
+      delete process.env.UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_CHECKS;
+      delete process.env.UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_INTERVAL_SECONDS;
+
+      vi.resetModules();
+      const { getAcmeConfig, resetEnvCache } = await import("../../../../packages/shared/src/config/env");
+      resetEnvCache();
+
+      expect(getAcmeConfig().dnsPropagation).toEqual({ maxChecks: 60, intervalMs: 5000 });
+    });
+
+    it("should read the DNS propagation budget from the environment", async () => {
+      process.env.UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_CHECKS = "90";
+      process.env.UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_INTERVAL_SECONDS = "10";
+
+      vi.resetModules();
+      const { getAcmeConfig, resetEnvCache } = await import("../../../../packages/shared/src/config/env");
+      resetEnvCache();
+
+      expect(getAcmeConfig().dnsPropagation).toEqual({ maxChecks: 90, intervalMs: 10000 });
+    });
   });
 
   describe("getCorsConfig", () => {
