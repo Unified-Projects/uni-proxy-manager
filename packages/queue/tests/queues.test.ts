@@ -24,6 +24,10 @@ describe("QUEUES", () => {
       expect(QUEUES.CERTIFICATE_RENEWAL).toBe("certificate-renewal");
     });
 
+    it("should define CERTIFICATE_RENEWAL_CHECK queue", () => {
+      expect(QUEUES.CERTIFICATE_RENEWAL_CHECK).toBe("certificate-renewal-check");
+    });
+
     it("should define DNS_CHALLENGE queue", () => {
       expect(QUEUES.DNS_CHALLENGE).toBe("dns-challenge");
     });
@@ -206,6 +210,29 @@ describe("QUEUE_CONFIG", () => {
       expect(config.defaultJobOptions.backoff).toEqual({
         type: "exponential",
         delay: 3600000,
+      });
+    });
+  });
+
+  describe("Certificate Renewal Check Queue", () => {
+    const config = QUEUE_CONFIG[QUEUES.CERTIFICATE_RENEWAL_CHECK];
+
+    it("should retry a failed scan once after 5 minutes", () => {
+      expect(config.defaultJobOptions.attempts).toBe(2);
+      expect(config.defaultJobOptions.backoff).toEqual({
+        type: "fixed",
+        delay: 300000,
+      });
+    });
+
+    it("should bound retained job history", () => {
+      expect(config.defaultJobOptions.removeOnComplete).toEqual({
+        age: 7 * 24 * 60 * 60,
+        count: 50,
+      });
+      expect(config.defaultJobOptions.removeOnFail).toEqual({
+        age: 30 * 24 * 60 * 60,
+        count: 100,
       });
     });
   });

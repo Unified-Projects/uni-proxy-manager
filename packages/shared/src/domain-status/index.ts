@@ -30,6 +30,47 @@ export interface CertificateForWildcardCheck {
   altNames?: string[] | null;
 }
 
+export type CertificateStatus = "pending" | "issuing" | "active" | "expired" | "failed" | "revoked";
+
+export interface CertificateForServing {
+  status: CertificateStatus;
+  expiresAt?: Date | null;
+  keyPath?: string | null;
+  fullchainPath?: string | null;
+}
+
+const STATUSES_WITH_PREVIOUS_CERTIFICATE: ReadonlySet<CertificateStatus> = new Set([
+  "pending",
+  "issuing",
+  "failed",
+]);
+
+/**
+ * Whether HAProxy should serve this certificate. Active certificates are always
+ * served. A certificate that is pending, issuing or failed is still served
+ * while it has files on disk and has not expired, so a renewal or reissue in
+ * progress (or one that failed) does not take the domain off HTTPS.
+ */
+export function isCertificateServable(
+  certificate: CertificateForServing | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!certificate) {
+    return false;
+  }
+
+  if (certificate.status === "active") {
+    return true;
+  }
+
+  return (
+    STATUSES_WITH_PREVIOUS_CERTIFICATE.has(certificate.status) &&
+    Boolean(certificate.keyPath && certificate.fullchainPath) &&
+    certificate.expiresAt instanceof Date &&
+    certificate.expiresAt.getTime() > now.getTime()
+  );
+}
+
 /**
  * Check if a hostname matches a wildcard pattern
  * e.g., "sub.example.com" matches "*.example.com"

@@ -12,6 +12,8 @@ export const QUEUES = {
   CERTIFICATE_ISSUE: "certificate-issue",
   /** Queue for certificate renewal jobs */
   CERTIFICATE_RENEWAL: "certificate-renewal",
+  /** Queue for the recurring scan that enqueues due certificate renewals */
+  CERTIFICATE_RENEWAL_CHECK: "certificate-renewal-check",
   /** Queue for DNS challenge operations */
   DNS_CHALLENGE: "dns-challenge",
   /** Queue for HAProxy config generation and reload */
@@ -122,6 +124,23 @@ export const QUEUE_CONFIG: Record<string, { defaultJobOptions: JobsOptions }> = 
       removeOnFail: {
         age: 30 * 24 * 60 * 60,
         count: 1000,
+      },
+    },
+  },
+  [QUEUES.CERTIFICATE_RENEWAL_CHECK]: {
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: {
+        type: "fixed",
+        delay: 300000, // 5 minutes
+      },
+      removeOnComplete: {
+        age: 7 * 24 * 60 * 60,
+        count: 50,
+      },
+      removeOnFail: {
+        age: 30 * 24 * 60 * 60,
+        count: 100,
       },
     },
   },

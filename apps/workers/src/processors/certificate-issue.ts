@@ -1,5 +1,5 @@
 import { type Job, Queue } from "bullmq";
-import { type CertificateIssueJobData, type CertificateResult, QUEUES, type HaproxyReloadJobData } from "@uni-proxy-manager/queue";
+import { type CertificateIssueJobData, type CertificateResult, QUEUES, getQueueConfig, type HaproxyReloadJobData } from "@uni-proxy-manager/queue";
 import { db } from "@uni-proxy-manager/database";
 import { certificates, dnsProviders, domains } from "@uni-proxy-manager/database/schema";
 import { eq } from "drizzle-orm";
@@ -24,16 +24,18 @@ function isUsingPebble(): boolean {
 export async function processCertificateIssue(
   job: Job<CertificateIssueJobData>
 ): Promise<CertificateResult> {
-  const { certificateId, domainId, hostname, altNames, dnsProviderId, acmeEmail, staging } = job.data;
+  const { certificateId, domainId, hostname, altNames, dnsProviderId, acmeEmail, staging, isRenewal } = job.data;
 
-  console.log(`[CertIssue] Processing certificate for ${hostname} (staging: ${staging})`);
+  console.log(`[CertIssue] Processing certificate for ${hostname} (staging: ${staging}, renewal: ${Boolean(isRenewal)})`);
 
   try {
-    // Update certificate status to issuing
-    await db
-      .update(certificates)
-      .set({ status: "issuing", updatedAt: new Date() })
-      .where(eq(certificates.id, certificateId));
+    // A renewal keeps the current certificate active so HAProxy continues to serve it
+    if (!isRenewal) {
+      await db
+        .update(certificates)
+        .set({ status: "issuing", updatedAt: new Date() })
+        .where(eq(certificates.id, certificateId));
+    }
 
     // Get DNS provider credentials
     const provider = await db.query.dnsProviders.findFirst({
@@ -189,6 +191,7 @@ export async function processCertificateIssue(
         issuedAt: new Date(),
         expiresAt,
         nextRenewalCheck: new Date(expiresAt.getTime() - 30 * 24 * 60 * 60 * 1000),
+        renewalAttempts: 0,
         lastError: null,
         updatedAt: new Date(),
       })
@@ -218,7 +221,10 @@ export async function processCertificateIssue(
           triggeredBy: "certificate",
           affectedDomainIds: [domainId],
         },
-        { jobId: `haproxy-reload-cert-${certificateId}` }
+        {
+          ...getQueueConfig(QUEUES.HAPROXY_RELOAD),
+          jobId: `haproxy-reload-cert-${certificateId}-${Date.now()}`,
+        }
       );
       console.log(`[CertIssue] Queued HAProxy reload for certificate ${certificateId}`);
     } catch (reloadError) {
@@ -237,15 +243,20 @@ export async function processCertificateIssue(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-    // Update certificate with error
+    // A failed renewal leaves the existing certificate active; the renewal
+    // processor has already recorded the attempt and scheduled the retry.
     await db
       .update(certificates)
-      .set({
-        status: "failed",
-        lastError: errorMessage,
-        renewalAttempts: (job.attemptsMade || 0) + 1,
-        updatedAt: new Date(),
-      })
+      .set(
+        isRenewal
+          ? { lastError: errorMessage, updatedAt: new Date() }
+          : {
+              status: "failed",
+              lastError: errorMessage,
+              renewalAttempts: (job.attemptsMade || 0) + 1,
+              updatedAt: new Date(),
+            }
+      )
       .where(eq(certificates.id, certificateId));
 
     console.error(`[CertIssue] Failed to issue certificate for ${hostname}:`, errorMessage);

@@ -19,6 +19,8 @@ export {
 export type {
   CertificateIssueJobData,
   CertificateRenewalJobData,
+  CertificateRenewalCheckJobData,
+  CertificateRenewalCheckResult,
   DnsChallengeJobData,
   HaproxyReloadJobData,
   HealthCheckJobData,

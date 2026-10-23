@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-23
+
+### Fixed
+- Run the automatic certificate renewal check every 6 hours and one minute after the worker starts. Nothing called it before, so certificates were never renewed automatically
+- Keep a certificate active while its renewal or reissue runs and when it fails, so HAProxy keeps serving the current certificate. Before this, the next config apply dropped the domain from the HTTPS frontend and it served a 503
+- HAProxy config generation keeps serving a pending, issuing or failed certificate while its files exist and it has not expired, which also covers certificates already left in `failed` by earlier renewals
+- Back off failed renewals (6, 12, then 24 hours between attempts) and retry certificates left `failed` by an earlier renewal. When a certificate is not yet due, move its next check to the renewal window
+- Queue the post-issue HAProxy reload with a unique job id. The fixed id meant BullMQ skipped the reload on every renewal after the first issue, so HAProxy kept serving the old certificate
+- Reset the renewal attempt counter after a successful issue
+
 ## [0.1.4] - 2026-10-23
 
 ### Security

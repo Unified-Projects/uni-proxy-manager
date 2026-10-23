@@ -318,8 +318,9 @@ app.put("/:id", zValidator("json", updateCertificateSchema), async (c) => {
       updatedAt: new Date(),
     };
 
+    // The status is left unchanged so HAProxy keeps serving the current
+    // certificate until the reissued one replaces it.
     if (shouldQueueReissue) {
-      updateData.status = "pending";
       updateData.lastError = null;
       updateData.lastRenewalAttempt = new Date();
     }
@@ -399,11 +400,11 @@ app.post("/:id/renew", async (c) => {
       return c.json({ error: "No DNS provider configured for this certificate" }, 400);
     }
 
-    // Update status to pending renewal
+    // The status is left unchanged so HAProxy keeps serving the current
+    // certificate until the renewed one replaces it.
     await db
       .update(certificates)
       .set({
-        status: "pending",
         lastRenewalAttempt: new Date(),
         updatedAt: new Date(),
       })

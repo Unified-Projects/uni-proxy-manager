@@ -13,6 +13,12 @@ export interface CertificateIssueJobData {
   dnsProviderId: string;
   acmeEmail: string;
   staging?: boolean;
+  /**
+   * Set when replacing an existing certificate. The current certificate stays
+   * active (and served by HAProxy) while the replacement is issued, and is
+   * left active if issuance fails.
+   */
+  isRenewal?: boolean;
 }
 
 /**
@@ -24,6 +30,19 @@ export interface CertificateRenewalJobData {
   hostname: string;
   dnsProviderId: string;
   forceRenewal?: boolean;
+}
+
+/**
+ * Recurring certificate renewal check job data
+ */
+export interface CertificateRenewalCheckJobData {
+  timestamp: string;
+}
+
+export interface CertificateRenewalCheckResult {
+  success: boolean;
+  /** Number of certificates queued for renewal */
+  queued: number;
 }
 
 /**
