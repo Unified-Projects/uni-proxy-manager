@@ -20,6 +20,10 @@ import {
   getCertsDir,
   getErrorPagesDir,
 } from "@uni-proxy-manager/shared/config";
+import {
+  isCertificateServable,
+  type CertificateForServing,
+} from "@uni-proxy-manager/shared/domain-status";
 
 /**
  * Ensure a directory exists, creating it if necessary
@@ -83,7 +87,7 @@ async function generateConfig(): Promise<string> {
     }
 
     const domainConfigs: DomainConfig[] = allDomains.map((domain) => {
-      const certActive = domain.certificate?.status === "active";
+      const certActive = isCertificateServable(domain.certificate);
       const sslEnabled = domain.sslEnabled && certActive;
 
       return {
@@ -224,17 +228,13 @@ async function ensureHaproxyPemFiles(
   domainsList: Array<{
     id: string;
     hostname: string;
-    certificate?: {
-      status?: string;
-      keyPath?: string | null;
-      fullchainPath?: string | null;
-    } | null;
+    certificate?: CertificateForServing | null;
   }>,
   certsDir: string,
 ): Promise<void> {
   for (const domain of domainsList) {
     const cert = domain.certificate;
-    if (!cert || cert.status !== "active") {
+    if (!cert || !isCertificateServable(cert)) {
       continue;
     }
     if (!cert.keyPath || !cert.fullchainPath) {

@@ -222,6 +222,13 @@ describe("Certificates API", () => {
       // Verify renewal job was queued
       const counts = await getQueueCounts(QUEUES.CERTIFICATE_RENEWAL);
       expect(counts.waiting + counts.active).toBeGreaterThanOrEqual(1);
+
+      // The current certificate keeps serving while the renewal runs
+      const renewingCert = await testDb.query.certificates.findFirst({
+        where: eq(schema.certificates.id, certId),
+      });
+      expect(renewingCert?.status).toBe("active");
+      expect(renewingCert?.lastRenewalAttempt).toBeInstanceOf(Date);
     });
 
     it("should return 404 for non-existent certificate", async () => {

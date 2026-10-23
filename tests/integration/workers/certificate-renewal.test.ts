@@ -425,6 +425,44 @@ describe("Certificate Renewal Worker", () => {
       await expect(checkCertificatesForRenewal()).resolves.toBe(1);
     });
 
+    it("should retry certificates left failed by an earlier renewal", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture()
+      );
+      const domainId = domainRes.body.domain.id;
+
+      const providerRes = await testClient.post<{ provider: any }>(
+        "/api/dns-providers",
+        createDnsProviderFixture("cloudflare")
+      );
+      const providerId = providerRes.body.provider.id;
+
+      const nextRenewalCheck = new Date();
+      nextRenewalCheck.setDate(nextRenewalCheck.getDate() - 1);
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 6);
+
+      await testDb
+        .insert(schema.certificates)
+        .values({
+          id: `test-cert-failed-renewal-${Date.now()}`,
+          domainId,
+          commonName: domainRes.body.domain.hostname,
+          status: "failed",
+          source: "letsencrypt",
+          autoRenew: true,
+          renewBeforeDays: 30,
+          renewalAttempts: 1,
+          expiresAt,
+          nextRenewalCheck,
+          dnsProviderId: providerId,
+        });
+
+      await expect(checkCertificatesForRenewal()).resolves.toBe(1);
+    });
+
     it("should not find certificates with autoRenew disabled", async () => {
       // Create domain
       const domainRes = await testClient.post<{ domain: any }>(

@@ -7,7 +7,7 @@ import type {
 } from "@uni-proxy-manager/queue";
 import { db } from "@uni-proxy-manager/database";
 import { certificates } from "@uni-proxy-manager/database/schema";
-import { eq, and, lte } from "drizzle-orm";
+import { eq, and, lte, inArray } from "drizzle-orm";
 import { Queue } from "bullmq";
 import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { QUEUES, getQueueConfig, type CertificateIssueJobData } from "@uni-proxy-manager/queue";
@@ -135,9 +135,11 @@ export async function processCertificateRenewal(
 }
 
 /**
- * Queue renewal jobs for every auto-renewing active certificate whose next
- * renewal check is due, including certificates that have already expired.
- * Returns the number of renewal jobs queued.
+ * Queue renewal jobs for every auto-renewing certificate whose next renewal
+ * check is due, including certificates that have already expired. Failed
+ * certificates are included so an earlier failed renewal is retried;
+ * nextRenewalCheck is only set once a certificate has been issued, so failed
+ * first issues are not picked up. Returns the number of renewal jobs queued.
  */
 export async function checkCertificatesForRenewal(): Promise<number> {
   console.log("[CertRenewal] Checking certificates for renewal...");
@@ -147,7 +149,7 @@ export async function checkCertificatesForRenewal(): Promise<number> {
   const dueForRenewal = await db.query.certificates.findMany({
     where: and(
       eq(certificates.autoRenew, true),
-      eq(certificates.status, "active"),
+      inArray(certificates.status, ["active", "failed"]),
       lte(certificates.nextRenewalCheck, now)
     ),
   });

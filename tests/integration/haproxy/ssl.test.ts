@@ -42,7 +42,11 @@ describe("HAProxy SSL/TLS", () => {
   /**
    * Create test certificate files and database record
    */
-  async function createTestCertificate(domainId: string, hostname: string): Promise<{
+  async function createTestCertificate(
+    domainId: string,
+    hostname: string,
+    overrides: Partial<Pick<typeof schema.certificates.$inferInsert, "status" | "expiresAt">> = {}
+  ): Promise<{
     certPath: string;
     keyPath: string;
     fullchainPath: string;
@@ -86,6 +90,7 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgsample-test-key
       fullchainPath,
       issuedAt: new Date(),
       expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      ...overrides,
     });
 
     return { certPath, keyPath, fullchainPath, certificateId };
@@ -152,6 +157,70 @@ MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgsample-test-key
       expect(previewRes.status).toBe(200);
       // Should have HTTP frontend but not HTTPS
       expect(previewRes.body).toContain("http_front");
+      expect(previewRes.body).not.toContain("https_front");
+    });
+  });
+
+  describe("Certificates with a failed renewal", () => {
+    async function createSslDomainWithCertificate(
+      hostname: string,
+      overrides: Partial<Pick<typeof schema.certificates.$inferInsert, "status" | "expiresAt">>
+    ): Promise<void> {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture({ hostname, sslEnabled: true })
+      );
+      const domainId = domainRes.body.domain.id;
+
+      const { certificateId } = await createTestCertificate(domainId, hostname, overrides);
+
+      await testDb
+        .update(schema.domains)
+        .set({ status: "active", sslEnabled: true, forceHttps: true, certificateId })
+        .where(eq(schema.domains.id, domainId));
+
+      await testClient.post(
+        "/api/backends",
+        createBackendFixture(domainId, { address: "127.0.0.1", port: mockBackendPort })
+      );
+    }
+
+    it("should keep serving a failed certificate that has not expired", async () => {
+      const hostname = "failed-valid.example.com";
+      await createSslDomainWithCertificate(hostname, {
+        status: "failed",
+        expiresAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+      });
+
+      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+
+      expect(previewRes.status).toBe(200);
+      expect(previewRes.body).toContain("https_front");
+      expect(previewRes.body).toContain(`hdr(host) -i ${hostname}`);
+      expect(previewRes.body).toContain("redirect scheme https");
+    });
+
+    it("should keep serving a certificate whose renewal is pending", async () => {
+      await createSslDomainWithCertificate("pending-renewal.example.com", {
+        status: "pending",
+        expiresAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+      });
+
+      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+
+      expect(previewRes.status).toBe(200);
+      expect(previewRes.body).toContain("https_front");
+    });
+
+    it("should not serve a failed certificate that has expired", async () => {
+      await createSslDomainWithCertificate("failed-expired.example.com", {
+        status: "failed",
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+
+      const previewRes = await testClient.get<string>("/api/haproxy/config/preview");
+
+      expect(previewRes.status).toBe(200);
       expect(previewRes.body).not.toContain("https_front");
     });
   });

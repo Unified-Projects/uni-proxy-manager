@@ -10,11 +10,77 @@ import {
   computeDomainStatus,
   getStatusLabel,
   getStatusColorClass,
+  isCertificateServable,
+  type CertificateForServing,
   type DomainForStatus,
   type ComputedDomainStatus,
 } from "../../../../../packages/shared/src/domain-status/index";
 
 describe("Domain Status", () => {
+  // ============================================================================
+  // isCertificateServable Tests
+  // ============================================================================
+
+  describe("isCertificateServable", () => {
+    const now = new Date("2026-10-23T12:00:00.000Z");
+    const validUntil = new Date("2026-10-29T12:00:00.000Z");
+    const expiredAt = new Date("2026-10-20T12:00:00.000Z");
+
+    function certificate(overrides: Partial<CertificateForServing>): CertificateForServing {
+      return {
+        status: "active",
+        expiresAt: validUntil,
+        keyPath: "/data/certificates/domain-1/key.pem",
+        fullchainPath: "/data/certificates/domain-1/fullchain.pem",
+        ...overrides,
+      };
+    }
+
+    it("should serve active certificates", () => {
+      expect(isCertificateServable(certificate({}), now)).toBe(true);
+    });
+
+    it("should keep serving a certificate whose renewal failed while it is still valid", () => {
+      expect(isCertificateServable(certificate({ status: "failed" }), now)).toBe(true);
+    });
+
+    it("should keep serving a still valid certificate while a renewal is pending or issuing", () => {
+      expect(isCertificateServable(certificate({ status: "pending" }), now)).toBe(true);
+      expect(isCertificateServable(certificate({ status: "issuing" }), now)).toBe(true);
+    });
+
+    it("should not serve a failed certificate that has expired", () => {
+      expect(
+        isCertificateServable(certificate({ status: "failed", expiresAt: expiredAt }), now)
+      ).toBe(false);
+    });
+
+    it("should not serve a failed certificate that was never issued", () => {
+      expect(
+        isCertificateServable(
+          certificate({ status: "failed", expiresAt: null, keyPath: null, fullchainPath: null }),
+          now
+        )
+      ).toBe(false);
+    });
+
+    it("should not serve a non-active certificate without files", () => {
+      expect(
+        isCertificateServable(certificate({ status: "failed", fullchainPath: null }), now)
+      ).toBe(false);
+    });
+
+    it("should not serve revoked or expired certificates", () => {
+      expect(isCertificateServable(certificate({ status: "revoked" }), now)).toBe(false);
+      expect(isCertificateServable(certificate({ status: "expired" }), now)).toBe(false);
+    });
+
+    it("should not serve when there is no certificate", () => {
+      expect(isCertificateServable(null, now)).toBe(false);
+      expect(isCertificateServable(undefined, now)).toBe(false);
+    });
+  });
+
   // ============================================================================
   // computeDomainStatus Tests
   // ============================================================================

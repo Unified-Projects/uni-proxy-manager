@@ -48,6 +48,10 @@ import {
   getCertsDir,
   getErrorPagesDir,
 } from "@uni-proxy-manager/shared/config";
+import {
+  isCertificateServable,
+  type CertificateForServing,
+} from "@uni-proxy-manager/shared/domain-status";
 import { isExtensionEnabled } from "../extensions";
 import { writeFile, readFile, stat } from "fs/promises";
 import { join } from "path";
@@ -503,8 +507,8 @@ async function generateConfig(): Promise<string> {
   >();
   for (const domain of allDomains) {
     if (
-      domain.certificate?.status === "active" &&
-      domain.certificate.altNames
+      isCertificateServable(domain.certificate) &&
+      domain.certificate?.altNames
     ) {
       certificateCoverage.set(domain.hostname, {
         domainId: domain.id,
@@ -550,7 +554,7 @@ async function generateConfig(): Promise<string> {
   }
 
   const domainConfigs: DomainConfig[] = allDomains.map((domain) => {
-    const certActive = domain.certificate?.status === "active";
+    const certActive = isCertificateServable(domain.certificate);
     // Check for wildcard coverage if domain doesn't have its own cert
     const coveringCert = !certActive
       ? findCertificateCoverage(domain.hostname)
@@ -997,17 +1001,13 @@ async function ensureHaproxyPemFiles(
   domainsList: Array<{
     id: string;
     hostname: string;
-    certificate?: {
-      status?: string;
-      keyPath?: string | null;
-      fullchainPath?: string | null;
-    } | null;
+    certificate?: CertificateForServing | null;
   }>,
   certsDir: string,
 ): Promise<void> {
   for (const domain of domainsList) {
     const cert = domain.certificate;
-    if (!cert || cert.status !== "active") {
+    if (!cert || !isCertificateServable(cert)) {
       continue;
     }
     if (!cert.keyPath || !cert.fullchainPath) {
