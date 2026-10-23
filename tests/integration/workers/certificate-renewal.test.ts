@@ -89,11 +89,15 @@ describe("Certificate Renewal Worker", () => {
       expect(result.success).toBe(true);
       expect(result.certificateId).toBe(cert.id);
 
-      // Status should remain active (not issuing)
+      // Status should remain active and the next check moves to the renewal window
       const updatedCert = await testDb.query.certificates.findFirst({
         where: eq(schema.certificates.id, cert.id),
       });
       expect(updatedCert?.status).toBe("active");
+      expect(updatedCert?.renewalAttempts).toBe(0);
+      expect(updatedCert?.nextRenewalCheck?.getTime()).toBe(
+        expiresAt.getTime() - 30 * 24 * 60 * 60 * 1000
+      );
     });
 
     it("should trigger renewal when certificate is expiring within renewBeforeDays", async () => {
@@ -142,12 +146,17 @@ describe("Certificate Renewal Worker", () => {
 
       expect(result.success).toBe(true);
 
-      // Status should change to issuing
+      // The current certificate stays active while the replacement is issued,
+      // and the next check is pushed out by the first retry delay
       const updatedCert = await testDb.query.certificates.findFirst({
         where: eq(schema.certificates.id, cert.id),
       });
-      expect(updatedCert?.status).toBe("issuing");
+      expect(updatedCert?.status).toBe("active");
       expect(updatedCert?.lastRenewalAttempt).toBeDefined();
+      expect(updatedCert?.renewalAttempts).toBe(1);
+      expect(updatedCert!.nextRenewalCheck!.getTime()).toBe(
+        updatedCert!.lastRenewalAttempt!.getTime() + 6 * 60 * 60 * 1000
+      );
     });
 
     it("should trigger renewal when forceRenewal is true regardless of expiry", async () => {
@@ -197,11 +206,12 @@ describe("Certificate Renewal Worker", () => {
 
       expect(result.success).toBe(true);
 
-      // Status should change to issuing even though not expiring soon
+      // Renewal is attempted even though not expiring soon
       const updatedCert = await testDb.query.certificates.findFirst({
         where: eq(schema.certificates.id, cert.id),
       });
-      expect(updatedCert?.status).toBe("issuing");
+      expect(updatedCert?.status).toBe("active");
+      expect(updatedCert?.renewalAttempts).toBe(1);
     });
   });
 
@@ -255,6 +265,10 @@ describe("Certificate Renewal Worker", () => {
         where: eq(schema.certificates.id, cert.id),
       });
       expect(updatedCert?.renewalAttempts).toBe(3);
+      // Third consecutive attempt backs off for 24 hours
+      expect(updatedCert!.nextRenewalCheck!.getTime()).toBe(
+        updatedCert!.lastRenewalAttempt!.getTime() + 24 * 60 * 60 * 1000
+      );
     });
 
     it("should set lastRenewalAttempt timestamp", async () => {
@@ -370,10 +384,45 @@ describe("Certificate Renewal Worker", () => {
           dnsProviderId: providerId,
         });
 
-      // This function queues jobs for due certificates
-      // In a real test environment with Redis, we'd verify jobs were queued
-      // For now, we just verify it doesn't throw
-      await expect(checkCertificatesForRenewal()).resolves.not.toThrow();
+      await expect(checkCertificatesForRenewal()).resolves.toBe(1);
+    });
+
+    it("should find active certificates that have already expired", async () => {
+      const domainRes = await testClient.post<{ domain: any }>(
+        "/api/domains",
+        createDomainFixture()
+      );
+      const domainId = domainRes.body.domain.id;
+
+      const providerRes = await testClient.post<{ provider: any }>(
+        "/api/dns-providers",
+        createDnsProviderFixture("cloudflare")
+      );
+      const providerId = providerRes.body.provider.id;
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() - 3);
+
+      const nextRenewalCheck = new Date(expiresAt);
+      nextRenewalCheck.setDate(nextRenewalCheck.getDate() - 30);
+
+      await testDb
+        .insert(schema.certificates)
+        .values({
+          id: `test-cert-expired-${Date.now()}`,
+          domainId,
+          commonName: domainRes.body.domain.hostname,
+          status: "active",
+          source: "letsencrypt",
+          autoRenew: true,
+          renewBeforeDays: 30,
+          renewalAttempts: 0,
+          expiresAt,
+          nextRenewalCheck,
+          dnsProviderId: providerId,
+        });
+
+      await expect(checkCertificatesForRenewal()).resolves.toBe(1);
     });
 
     it("should not find certificates with autoRenew disabled", async () => {
@@ -406,8 +455,7 @@ describe("Certificate Renewal Worker", () => {
           nextRenewalCheck,
         });
 
-      // Should not throw
-      await expect(checkCertificatesForRenewal()).resolves.not.toThrow();
+      await expect(checkCertificatesForRenewal()).resolves.toBe(0);
     });
 
     it("should not find certificates with status other than active", async () => {
@@ -436,7 +484,7 @@ describe("Certificate Renewal Worker", () => {
           nextRenewalCheck,
         });
 
-      await expect(checkCertificatesForRenewal()).resolves.not.toThrow();
+      await expect(checkCertificatesForRenewal()).resolves.toBe(0);
     });
   });
 
@@ -492,7 +540,8 @@ describe("Certificate Renewal Worker", () => {
       const updatedCert = await testDb.query.certificates.findFirst({
         where: eq(schema.certificates.id, cert.id),
       });
-      expect(updatedCert?.status).toBe("issuing");
+      expect(updatedCert?.status).toBe("active");
+      expect(updatedCert?.renewalAttempts).toBe(1);
     });
   });
 
@@ -640,7 +689,8 @@ describe("Certificate Renewal Worker", () => {
       const updatedCert = await testDb.query.certificates.findFirst({
         where: eq(schema.certificates.id, cert.id),
       });
-      expect(updatedCert?.status).toBe("issuing");
+      expect(updatedCert?.status).toBe("active");
+      expect(updatedCert?.renewalAttempts).toBe(1);
     });
   });
 });

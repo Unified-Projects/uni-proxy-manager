@@ -1,11 +1,11 @@
 import { Worker, Queue } from "bullmq";
 import { getRedisClient, closeRedisConnection } from "@uni-proxy-manager/shared/redis";
 import { QUEUES, getQueueConfig } from "@uni-proxy-manager/queue";
-import type { MetricsCollectionJobData, MaintenanceCleanupJobData, HaproxyLogParseJobData, ClusterSyncJobData, HaproxyWatchdogJobData } from "@uni-proxy-manager/queue";
+import type { MetricsCollectionJobData, MaintenanceCleanupJobData, HaproxyLogParseJobData, ClusterSyncJobData, HaproxyWatchdogJobData, CertificateRenewalCheckJobData } from "@uni-proxy-manager/queue";
 
 // Import processors
 import { processCertificateIssue } from "./processors/certificate-issue";
-import { processCertificateRenewal } from "./processors/certificate-renewal";
+import { processCertificateRenewal, processCertificateRenewalCheck } from "./processors/certificate-renewal";
 import { processDnsChallenge } from "./processors/dns-challenge";
 import { processHaproxyReload } from "./processors/haproxy-reload";
 import { processHealthCheck } from "./processors/health-check";
@@ -46,6 +46,18 @@ async function startWorkers() {
   );
   workers.push(certRenewalWorker);
   console.log(`[Workers] Started ${QUEUES.CERTIFICATE_RENEWAL} worker`);
+
+  // Certificate Renewal Check Worker
+  const certRenewalCheckWorker = new Worker(
+    QUEUES.CERTIFICATE_RENEWAL_CHECK,
+    processCertificateRenewalCheck,
+    {
+      connection: redis,
+      concurrency: 1,
+    }
+  );
+  workers.push(certRenewalCheckWorker);
+  console.log(`[Workers] Started ${QUEUES.CERTIFICATE_RENEWAL_CHECK} worker`);
 
   // DNS Challenge Worker
   const dnsWorker = new Worker(
@@ -290,6 +302,36 @@ async function startWorkers() {
   );
 
   console.log("[Workers] Scheduled HAProxy watchdog (every 30 seconds)");
+
+  // Setup recurring certificate renewal check (every 6 hours, plus once shortly after start)
+  const renewalCheckQueue = new Queue<CertificateRenewalCheckJobData>(QUEUES.CERTIFICATE_RENEWAL_CHECK, {
+    connection: redis,
+    defaultJobOptions: getQueueConfig(QUEUES.CERTIFICATE_RENEWAL_CHECK),
+  });
+
+  await renewalCheckQueue.add(
+    "certificate-renewal-check",
+    { timestamp: new Date().toISOString() },
+    {
+      ...getQueueConfig(QUEUES.CERTIFICATE_RENEWAL_CHECK),
+      repeat: {
+        pattern: "0 */6 * * *", // Every 6 hours
+      },
+      jobId: "certificate-renewal-check-recurring",
+    }
+  );
+
+  await renewalCheckQueue.add(
+    "certificate-renewal-check-startup",
+    { timestamp: new Date().toISOString() },
+    {
+      ...getQueueConfig(QUEUES.CERTIFICATE_RENEWAL_CHECK),
+      delay: 60_000,
+      jobId: `certificate-renewal-check-startup-${Date.now()}`,
+    }
+  );
+
+  console.log("[Workers] Scheduled certificate renewal check (every 6 hours, first run in 1 minute)");
   console.log("[Workers] All workers started");
 }
 
