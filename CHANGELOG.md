@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-23
+
+### Fixed
+- Publish every DNS-01 TXT record for an order before completing any challenge. A certificate for an apex and its wildcard needs two values at the same `_acme-challenge` name, and creating the second only after the first was validated and deleted left resolvers and Let's Encrypt's secondary validation serving the cached first value, which caused propagation timeouts and "Incorrect TXT record" failures
+- The propagation check accepts a TXT record set that contains each expected value alongside others, and checks values sharing a name together
+- Delete challenge records by Cloudflare record id once the order is finalised or has failed, so cleanup never removes another pending value at the same name. Creating a record no longer deletes existing TXT records at that name
+
+### Changed
+- Allow 60 propagation checks 5 seconds apart by default (previously 30). Set `UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_CHECKS` and `UNI_PROXY_MANAGER_ACME_DNS_PROPAGATION_INTERVAL_SECONDS` to change them
+
 ## [0.1.5] - 2026-10-23
 
 ### Fixed

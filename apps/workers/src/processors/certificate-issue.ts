@@ -8,12 +8,23 @@ import { getRedisClient } from "@uni-proxy-manager/shared/redis";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import * as acme from "acme-client";
-import type {
-  CloudflareCredentials,
-  NamecheapCredentials,
-} from "@uni-proxy-manager/database/schema";
+import {
+  createCloudflareChallengeRecord,
+  deleteCloudflareChallengeRecord,
+  waitForDnsPropagation,
+  type DnsChallengeRecord,
+} from "../lib/dns-01";
 
 const ACME_ACCOUNT_KEY_PATH = "/data/acme/account.key";
+
+type DnsProvider = typeof dnsProviders.$inferSelect;
+type AcmeChallenge = acme.Authorization["challenges"][number];
+
+interface PendingChallenge {
+  identifier: string;
+  challenge: AcmeChallenge;
+  keyAuthorization: string;
+}
 
 // Check if we're using Pebble test server (auto-validates all challenges)
 function isUsingPebble(): boolean {
@@ -96,12 +107,10 @@ export async function processCertificateIssue(
 
     console.log(`[CertIssue] Created order for ${hostname}`);
 
-    // Get authorizations
     const authorizations = await client.getAuthorizations(order);
-
-    // Process each authorization with DNS-01 challenge
     const usingPebble = isUsingPebble();
 
+    const pendingChallenges: PendingChallenge[] = [];
     for (const authz of authorizations) {
       const challenge = authz.challenges.find((c) => c.type === "dns-01");
 
@@ -109,54 +118,46 @@ export async function processCertificateIssue(
         throw new Error(`No DNS-01 challenge found for ${authz.identifier.value}`);
       }
 
-      const keyAuthorization = await client.getChallengeKeyAuthorization(challenge);
-
-      console.log(`[CertIssue] Setting DNS challenge for ${authz.identifier.value}`);
-
-      // Skip actual DNS operations when using Pebble (it auto-validates)
-      if (!usingPebble) {
-        // Set DNS TXT record via provider
-        await setDnsChallenge(provider, authz.identifier.value, keyAuthorization);
-
-        // Wait for DNS propagation
-        await waitForDnsPropagation(`_acme-challenge.${authz.identifier.value}`, keyAuthorization);
-      } else {
-        console.log(`[CertIssue] Using Pebble - skipping DNS operations (auto-validated)`);
-      }
-
-      // Pebble can auto-validate quickly, especially with SAN orders.
-      // Skip completing already-valid challenges and tolerate valid-race errors.
-      const challengeStatus = challenge.status ?? "pending";
-      if (challengeStatus === "valid") {
-        console.log(`[CertIssue] Challenge already valid for ${authz.identifier.value}`);
-        await client.waitForValidStatus(challenge);
-      } else {
-        try {
-          // Notify ACME server challenge is ready
-          await client.completeChallenge(challenge);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (!message.includes("status valid")) {
-            throw error;
-          }
-          console.log(`[CertIssue] Challenge became valid before completion for ${authz.identifier.value}`);
-        }
-        // Wait for challenge authorization state to settle before finalizing the order.
-        await client.waitForValidStatus(challenge);
-      }
-
-      console.log(`[CertIssue] Challenge validated for ${authz.identifier.value}`);
-
-      // Clean up DNS record
-      if (!usingPebble) {
-        await clearDnsChallenge(provider, authz.identifier.value);
-      }
+      pendingChallenges.push({
+        identifier: authz.wildcard ? `*.${authz.identifier.value}` : authz.identifier.value,
+        challenge,
+        keyAuthorization: await client.getChallengeKeyAuthorization(challenge),
+      });
     }
 
-    // Finalize order and wait for a valid, certificate-ready order resource.
-    let finalizedOrder = await client.finalizeOrder(order, certificateCsr);
-    finalizedOrder = await client.waitForValidStatus(finalizedOrder);
-    const certificate = await client.getCertificate(finalizedOrder);
+    // Every TXT record for the order is published before any challenge is
+    // completed, because an apex and its wildcard share one record name.
+    const challengeRecords: DnsChallengeRecord[] = [];
+    let certificate: string;
+
+    try {
+      if (usingPebble) {
+        console.log(`[CertIssue] Using Pebble - skipping DNS operations (auto-validated)`);
+      } else {
+        for (const { identifier, keyAuthorization } of pendingChallenges) {
+          console.log(`[CertIssue] Setting DNS challenge for ${identifier}`);
+          challengeRecords.push(await createChallengeRecord(provider, identifier, keyAuthorization));
+        }
+
+        await waitForDnsPropagation(challengeRecords, getAcmeConfig().dnsPropagation);
+      }
+
+      for (const { identifier, challenge } of pendingChallenges) {
+        await completeChallenge(client, challenge, identifier);
+      }
+
+      for (const { identifier, challenge } of pendingChallenges) {
+        await client.waitForValidStatus(challenge);
+        console.log(`[CertIssue] Challenge validated for ${identifier}`);
+      }
+
+      // Finalize order and wait for a valid, certificate-ready order resource.
+      let finalizedOrder = await client.finalizeOrder(order, certificateCsr);
+      finalizedOrder = await client.waitForValidStatus(finalizedOrder);
+      certificate = await client.getCertificate(finalizedOrder);
+    } finally {
+      await removeChallengeRecords(provider, challengeRecords);
+    }
 
     // Split certificate chain
     const certs = certificate.split(/(?=-----BEGIN CERTIFICATE-----)/);
@@ -287,231 +288,65 @@ async function getOrCreateAccountKey(): Promise<Buffer> {
   }
 }
 
-async function setDnsChallenge(
-  provider: { type: string; credentials: unknown },
-  hostname: string,
-  token: string
+async function completeChallenge(
+  client: acme.Client,
+  challenge: AcmeChallenge,
+  identifier: string
 ): Promise<void> {
-  // Strip wildcard prefix for DNS challenge - ACME requires challenge at base domain
-  const challengeHostname = hostname.startsWith("*.") ? hostname.substring(2) : hostname;
-  const recordName = `_acme-challenge.${challengeHostname}`;
+  // Pebble can auto-validate quickly, especially with SAN orders.
+  // Skip completing already-valid challenges and tolerate valid-race errors.
+  if (challenge.status === "valid") {
+    console.log(`[CertIssue] Challenge already valid for ${identifier}`);
+    return;
+  }
 
-  if (provider.type === "cloudflare") {
-    await handleCloudflareChallenge(
-      provider.credentials as CloudflareCredentials,
-      hostname,
-      recordName,
-      token,
-      "set"
-    );
-  } else if (provider.type === "namecheap") {
-    throw new Error("Namecheap DNS challenge not yet implemented");
-  } else {
-    throw new Error(`Unsupported DNS provider type: ${provider.type}`);
+  try {
+    await client.completeChallenge(challenge);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("status valid")) {
+      throw error;
+    }
+    console.log(`[CertIssue] Challenge became valid before completion for ${identifier}`);
   }
 }
 
-async function clearDnsChallenge(
-  provider: { type: string; credentials: unknown },
-  hostname: string
-): Promise<void> {
-  // Strip wildcard prefix for DNS challenge - ACME requires challenge at base domain
-  const challengeHostname = hostname.startsWith("*.") ? hostname.substring(2) : hostname;
-  const recordName = `_acme-challenge.${challengeHostname}`;
-
+async function createChallengeRecord(
+  provider: DnsProvider,
+  identifier: string,
+  value: string
+): Promise<DnsChallengeRecord> {
   if (provider.type === "cloudflare") {
-    await handleCloudflareChallenge(
-      provider.credentials as CloudflareCredentials,
-      hostname,
-      recordName,
-      "",
-      "clear"
-    );
+    return createCloudflareChallengeRecord(provider.credentials, identifier, value);
   }
-  // Silently skip for other providers
+
+  if (provider.type === "namecheap") {
+    throw new Error("Namecheap DNS challenge not yet implemented");
+  }
+
+  throw new Error(`Unsupported DNS provider type: ${provider.type}`);
 }
 
 /**
- * Find the Cloudflare zone for a hostname by trying progressively shorter domain segments.
- * This handles multi-part TLDs like .co.uk, .com.au, etc.
+ * Deletes the records created for this order by id. A failed deletion is
+ * logged and does not change the outcome of the order.
  */
-async function findCloudflareZone(
-  hostname: string,
-  headers: Record<string, string>
-): Promise<{ zoneId: string | null; zoneName: string | null }> {
-  // Strip wildcard prefix if present
-  const cleanHostname = hostname.startsWith("*.") ? hostname.substring(2) : hostname;
-  const parts = cleanHostname.split(".");
+async function removeChallengeRecords(
+  provider: DnsProvider,
+  records: readonly DnsChallengeRecord[]
+): Promise<void> {
+  if (provider.type !== "cloudflare") {
+    return;
+  }
 
-  // Try from most specific to least specific (but need at least 2 parts for a valid domain)
-  for (let i = 0; i < parts.length - 1; i++) {
-    const candidateZone = parts.slice(i).join(".");
-
+  for (const record of records) {
     try {
-      const zonesResponse = await fetch(
-        `https://api.cloudflare.com/client/v4/zones?name=${candidateZone}`,
-        { headers }
-      );
-
-      const zonesData = (await zonesResponse.json()) as {
-        result: Array<{ id: string; name: string }>;
-        success: boolean;
-      };
-
-      if (zonesData.success && zonesData.result?.[0]?.id) {
-        return {
-          zoneId: zonesData.result[0].id,
-          zoneName: zonesData.result[0].name,
-        };
-      }
+      await deleteCloudflareChallengeRecord(provider.credentials, record);
     } catch (error) {
-      console.warn(`[Cloudflare] Failed to check zone ${candidateZone}:`, error);
+      console.warn(
+        `[CertIssue] Failed to delete TXT record ${record.recordId} for ${record.recordName}:`,
+        error
+      );
     }
   }
-
-  return { zoneId: null, zoneName: null };
-}
-
-async function handleCloudflareChallenge(
-  credentials: CloudflareCredentials,
-  hostname: string,
-  recordName: string,
-  token: string,
-  action: "set" | "clear"
-): Promise<void> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (credentials.apiToken) {
-    headers["Authorization"] = `Bearer ${credentials.apiToken}`;
-  } else if (credentials.email && credentials.apiKey) {
-    headers["X-Auth-Email"] = credentials.email;
-    headers["X-Auth-Key"] = credentials.apiKey;
-  } else {
-    throw new Error("Invalid Cloudflare credentials");
-  }
-
-  // Find the zone by trying progressively shorter domain segments
-  // This handles multi-part TLDs like .co.uk, .com.au, etc.
-  const { zoneId, zoneName } = await findCloudflareZone(hostname, headers);
-
-  if (!zoneId) {
-    throw new Error(`Zone not found for ${hostname} (tried all parent domains)`);
-  }
-
-  console.log(`[Cloudflare] Using zone ${zoneName} (${zoneId}) for ${hostname}`);
-
-  if (action === "set") {
-    // First, clear any existing records
-    await deleteExistingRecords(headers, zoneId, recordName);
-
-    // Create TXT record
-    const createResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          type: "TXT",
-          name: recordName,
-          content: token,
-          ttl: 60,
-        }),
-      }
-    );
-
-    if (!createResponse.ok) {
-      const error = await createResponse.text();
-      throw new Error(`Failed to create DNS record: ${error}`);
-    }
-
-    console.log(`[Cloudflare] Created TXT record for ${recordName}`);
-  } else {
-    await deleteExistingRecords(headers, zoneId, recordName);
-    console.log(`[Cloudflare] Deleted TXT record for ${recordName}`);
-  }
-}
-
-async function deleteExistingRecords(
-  headers: Record<string, string>,
-  zoneId: string,
-  recordName: string
-): Promise<void> {
-  const recordsResponse = await fetch(
-    `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?type=TXT&name=${recordName}`,
-    { headers }
-  );
-
-  const recordsData = await recordsResponse.json() as { result: Array<{ id: string }> };
-
-  for (const record of recordsData.result || []) {
-    await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${record.id}`,
-      {
-        method: "DELETE",
-        headers,
-      }
-    );
-  }
-}
-
-async function waitForDnsPropagation(
-  recordName: string,
-  expectedValue: string,
-  maxAttempts = 30,
-  delayMs = 5000
-): Promise<void> {
-  console.log(`[CertIssue] Waiting for DNS propagation of ${recordName}...`);
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const verified = await verifyDnsPropagation(recordName, expectedValue);
-
-    if (verified) {
-      console.log(`[CertIssue] DNS propagation verified after ${attempt} attempts`);
-      return;
-    }
-
-    console.log(`[CertIssue] DNS not propagated yet (attempt ${attempt}/${maxAttempts})`);
-    await sleep(delayMs);
-  }
-
-  throw new Error(`DNS propagation timeout for ${recordName}`);
-}
-
-async function verifyDnsPropagation(
-  recordName: string,
-  expectedValue: string
-): Promise<boolean> {
-  try {
-    // Use Cloudflare DNS-over-HTTPS for verification
-    const response = await fetch(
-      `https://cloudflare-dns.com/dns-query?name=${recordName}&type=TXT`,
-      {
-        headers: {
-          Accept: "application/dns-json",
-        },
-      }
-    );
-
-    const data = await response.json() as {
-      Answer?: Array<{ data: string }>;
-    };
-
-    if (!data.Answer) {
-      return false;
-    }
-
-    // Check if any TXT record matches
-    return data.Answer.some(
-      (record) => record.data.replace(/"/g, "") === expectedValue
-    );
-  } catch (error) {
-    console.error("[DNS Verification] Error:", error);
-    return false;
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
