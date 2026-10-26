@@ -16,7 +16,7 @@
     "@uni-proxy-manager/shared": "workspace:*",
     "bullmq": "^5.81.5",
     "drizzle-orm": "^0.45.4",
-    "ioredis": "5.11.1",
+    "ioredis": "6.0.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
