@@ -14,7 +14,7 @@
     "bullmq": "^5.81.5",
     "drizzle-orm": "^0.45.4",
     "ioredis": "5.11.1",
-    "nanoid": "^5.1.16",
+    "nanoid": "^6.0.2",
     "picomatch": "^4.0.7"
   },
   "devDependencies": {
