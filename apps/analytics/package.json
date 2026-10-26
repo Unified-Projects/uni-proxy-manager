@@ -30,8 +30,8 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
-    "@types/node": "^25.9.9",
+    "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
