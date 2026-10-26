@@ -21,7 +21,7 @@
     "bullmq": "^5.81.5",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
-    "ioredis": "5.11.1",
+    "ioredis": "6.0.0",
     "jose": "^5.10.0",
     "nanoid": "^5.1.16",
     "ua-parser-js": "^2.0.10",

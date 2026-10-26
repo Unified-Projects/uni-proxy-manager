@@ -13,7 +13,7 @@
     "@uni-proxy-manager/shared": "workspace:*",
     "bullmq": "^5.81.5",
     "drizzle-orm": "^0.45.4",
-    "ioredis": "5.11.1",
+    "ioredis": "6.0.0",
     "nanoid": "^5.1.16",
     "picomatch": "^4.0.7"
   },

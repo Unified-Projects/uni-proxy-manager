@@ -15,7 +15,7 @@ overrides:
   rollup@>=4.0.0 <5.0.0: '>=4.59.0'
   ajv@<7.0.0: 6.14.0
   fast-xml-parser@>=5.0.0 <6.0.0: '>=5.3.8'
-  ioredis: 5.11.1
+  ioredis: 6.0.0
   uuid@<11.1.1: ^11.1.1
 
 importers:
@@ -71,8 +71,8 @@ importers:
         specifier: ^4.13.13
         version: 4.13.13
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
@@ -137,8 +137,8 @@ importers:
         specifier: ^4.13.13
         version: 4.13.13
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       jose:
         specifier: ^5.10.0
         version: 5.10.0
@@ -189,8 +189,8 @@ importers:
         specifier: ^0.45.4
         version: 0.45.4(bun-types@1.4.3)(postgres@3.4.9)
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
@@ -238,8 +238,8 @@ importers:
         specifier: ^4.13.13
         version: 4.13.13
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       jose:
         specifier: ^5.10.0
         version: 5.10.0
@@ -284,8 +284,8 @@ importers:
         specifier: ^0.45.4
         version: 0.45.4(bun-types@1.4.3)(postgres@3.4.9)
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -312,8 +312,8 @@ importers:
         specifier: ^5.81.5
         version: 5.81.5
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       playwright:
         specifier: ^1.64.1
         version: 1.64.1
@@ -428,8 +428,8 @@ importers:
         specifier: ^0.45.4
         version: 0.45.4(bun-types@1.4.3)(postgres@3.4.9)
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
     devDependencies:
       '@types/dockerode':
         specifier: ^4.0.2
@@ -466,8 +466,8 @@ importers:
         specifier: ^5.81.5
         version: 5.81.5
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -491,8 +491,8 @@ importers:
         specifier: ^14.2.0
         version: 14.2.0
       ioredis:
-        specifier: 5.11.1
-        version: 5.11.1
+        specifier: 6.0.0
+        version: 6.0.0
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
@@ -1241,8 +1241,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ioredis/commands@1.10.0':
-    resolution: {integrity: sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==}
+  '@ioredis/commands@2.0.0':
+    resolution: {integrity: sha512-vrx0AE/T0h7cRZwfo1M39Cr+ZhZrkf0V8mQN75wucKCxCLD9l/VX6no3gFvrLqD1IlG/1LtzWovqEw3t0Vr9zg==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -3027,6 +3027,7 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+    deprecated: v4 is no longer maintained, upgrade to v5
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -3799,9 +3800,9 @@ packages:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
 
-  ioredis@5.11.1:
-    resolution: {integrity: sha512-ehuGcf94bQXhfagULNXrJdfnWO38v070jxSx/qE87Kjzmu2fU7ro5EFAb+OPituLqgfyuQaym5DlrNydW2sJ9A==}
-    engines: {node: '>=12.22.0'}
+  ioredis@6.0.0:
+    resolution: {integrity: sha512-f+Dtubxfpf6KYFq7WVXJoOLn0bk4TJrMrN9SzeE+jrWrCWj7XX3fA6vkryafhADX+GMymRxgDJDOI33COkJc0w==}
+    engines: {node: '>=20.0.0'}
 
   is-array-buffer@3.0.5:
     resolution: {integrity: sha512-DDfANUiiG2wC1qawP66qlTugJeL5HyzMpfr8lLK+jMQirGzNod0B12cFB/9q838Ru27sBwfw78/rdoU7RERz6A==}
@@ -4660,10 +4661,6 @@ packages:
 
   redis-errors@1.2.0:
     resolution: {integrity: sha512-1qny3OExCf0UvUV/5wpYKf2YwPcOqXzkwKKSmKHiE6ZMQs5heeE/c8eXK+PNllPvmjgAbfnsbpkGZWy8cBpn9w==}
-    engines: {node: '>=4'}
-
-  redis-parser@3.0.0:
-    resolution: {integrity: sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A==}
     engines: {node: '>=4'}
 
   redux-thunk@3.1.0:
@@ -6045,7 +6042,7 @@ snapshots:
   '@img/sharp-win32-x64@0.35.5':
     optional: true
 
-  '@ioredis/commands@1.10.0': {}
+  '@ioredis/commands@2.0.0': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:
@@ -7800,7 +7797,7 @@ snapshots:
   bullmq@5.81.5:
     dependencies:
       cron-parser: 4.9.0
-      ioredis: 5.11.1
+      ioredis: 6.0.0
       msgpackr: 2.0.5
       node-abort-controller: 3.1.1
       semver: 7.8.5
@@ -8267,8 +8264,8 @@ snapshots:
       '@next/eslint-plugin-next': 16.4.2(eslint@10.13.0(jiti@1.21.7))
       eslint: 10.13.0(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@10.13.0(jiti@1.21.7))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@10.13.0(jiti@1.21.7))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@10.13.0(jiti@1.21.7))
       eslint-plugin-react: 7.37.5(eslint@10.13.0(jiti@1.21.7))
       eslint-plugin-react-hooks: 7.1.1(eslint@10.13.0(jiti@1.21.7))
@@ -8290,7 +8287,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@10.13.0(jiti@1.21.7)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -8301,22 +8298,22 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@10.13.0(jiti@1.21.7))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.14.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)):
+  eslint-module-utils@2.14.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@10.13.0(jiti@1.21.7)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3)
       eslint: 10.13.0(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@10.13.0(jiti@1.21.7))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@10.13.0(jiti@1.21.7)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.2.0
@@ -8327,7 +8324,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 10.13.0(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.10
-      eslint-module-utils: 2.14.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7)))(eslint@10.13.0(jiti@1.21.7))
+      eslint-module-utils: 2.14.0(@typescript-eslint/parser@8.72.0(eslint@10.13.0(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@10.13.0(jiti@1.21.7))
       hasown: 2.0.4
       is-core-module: 2.17.0
       is-glob: 4.0.3
@@ -8771,14 +8768,13 @@ snapshots:
 
   internmap@2.0.3: {}
 
-  ioredis@5.11.1:
+  ioredis@6.0.0:
     dependencies:
-      '@ioredis/commands': 1.10.0
+      '@ioredis/commands': 2.0.0
       cluster-key-slot: 1.1.1
       debug: 4.4.3
       denque: 2.1.0
       redis-errors: 1.2.0
-      redis-parser: 3.0.0
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
@@ -9626,10 +9622,6 @@ snapshots:
       strip-indent: 3.0.0
 
   redis-errors@1.2.0: {}
-
-  redis-parser@3.0.0:
-    dependencies:
-      redis-errors: 1.2.0
 
   redux-thunk@3.1.0(redux@5.0.1):
     dependencies:
